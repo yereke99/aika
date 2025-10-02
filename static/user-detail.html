@@ -1,0 +1,339 @@
+<!-- static/user-detail.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=no"/>
+  <title>AIKA — Профиль</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#000}
+    :root{
+      --safe-top: env(safe-area-inset-top);
+      --safe-bottom: env(safe-area-inset-bottom);
+    }
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      color:#fff; background:#000;
+      overscroll-behavior-y:contain; touch-action:manipulation;
+    }
+
+    /* App shell: no page bounce */
+    .app{position:fixed; inset:0; display:flex; flex-direction:column; background:#000;}
+    .scroll{flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none;}
+    .scroll::-webkit-scrollbar{display:none}
+
+    /* ===== Full-bleed hero photo (frameless, big) ===== */
+    .hero{position:relative; width:100%; height:min(85svh, 85dvh); background:#111; overflow:hidden;}
+    .hero-img{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;}
+    .hero-img img{width:100%; height:100%; object-fit:cover; display:block; user-select:none; -webkit-user-drag:none;}
+    .hero-empty{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      background:linear-gradient(180deg,#181818,#0f0f0f); font-size:64px}
+    .hero::before,
+    .hero::after{
+      content:""; position:absolute; left:0; right:0; pointer-events:none;
+    }
+    .hero::before{top:0; height:120px; background:linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0));}
+    .hero::after{bottom:0; height:160px; background:linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,0));}
+
+    /* Overlay controls on hero */
+    .top-bar{
+      position:absolute; top:calc(var(--safe-top, 0px) + 8px); left:10px; right:10px;
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+    }
+    .pill{
+      padding:8px 12px; background:rgba(0,0,0,.45); backdrop-filter:blur(8px);
+      border:1px solid rgba(255,255,255,.2); border-radius:12px; color:#fff; font-weight:700; cursor:pointer;
+    }
+
+    /* Content */
+    .container{max-width:680px; margin:0 auto; padding:16px 20px 24px}
+    .card{background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:16px; padding:18px}
+    .nick{font-size:24px; font-weight:800;}
+    .meta{margin-top:8px; color:#bbb; font-size:15px; display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+    .distance{color:#ff3d84; font-weight:700}
+    .about{margin-top:14px; color:#eee; line-height:1.7; font-size:16px; white-space:pre-wrap}
+    .actions{margin-top:16px; display:flex; gap:10px; flex-wrap:wrap}
+    .btn{flex:1 1 160px; padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,.2); background:#1a1a1a; color:#fff; cursor:pointer; font-weight:700}
+    .btn.primary{background:linear-gradient(45deg,#ff006e,#ff4d94); border:none}
+
+    .loader{text-align:center; padding:40px; color:#808080}
+    .loader-spinner{width:40px; height:40px; border:4px solid rgba(255,255,255,.1); border-top-color:#ff006e; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 15px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* Slide animations for swipe */
+    .slide{transition:transform .28s ease, opacity .28s ease; will-change:transform, opacity;}
+    .slide.enter-from-right{transform:translateX(25%); opacity:.6}
+    .slide.enter-from-left{transform:translateX(-25%); opacity:.6}
+    .slide.enter-active{transform:translateX(0); opacity:1}
+    .slide.leave-to-left{transform:translateX(-25%); opacity:.6}
+    .slide.leave-to-right{transform:translateX(25%); opacity:.6}
+
+    /* ===== Bottom back bar ===== */
+    .bottom-bar{
+      position:fixed; left:0; right:0;
+      bottom:calc(var(--safe-bottom, 0px) + 10px);
+      display:flex; justify-content:center; z-index:1000; pointer-events:none;
+    }
+    .back-cta{
+      pointer-events:auto;
+      padding:12px 18px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.18);
+      background:rgba(0,0,0,.6);
+      backdrop-filter:blur(10px);
+      color:#fff; font-weight:800; cursor:pointer;
+      box-shadow:0 6px 24px rgba(0,0,0,.35);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="scroll" id="scrollRoot">
+      <!-- HERO -->
+      <div class="hero" id="hero">
+        <div class="top-bar">
+          <button class="pill" id="backBtn">← Назад</button>
+          <div style="display:flex; gap:8px">
+            <button class="pill" id="chatBtn">💬</button>
+            <button class="pill" id="likeBtn">❤</button>
+          </div>
+        </div>
+
+        <!-- photo area -->
+        <div class="hero-img slide" id="heroImg">
+          <div class="hero-empty" id="heroEmpty">📸</div>
+          <img id="heroPhoto" alt="" style="display:none" />
+        </div>
+
+        <div class="swipe-hint" id="swipeHint">Свайпайте ← / →</div>
+      </div>
+
+      <!-- CONTENT -->
+      <div class="container">
+        <div id="loader" class="loader">
+          <div class="loader-spinner"></div>
+          <div>Загружаем профиль...</div>
+        </div>
+
+        <div id="profile" style="display:none;">
+          <div class="card">
+            <div class="nick" id="nick"></div>
+            <div class="meta">
+              <span id="sex"></span>
+              <span id="age"></span>
+              <span id="dist" class="distance" style="display:none;"></span>
+            </div>
+            <div class="about" id="about"></div>
+            <div class="actions">
+              <button class="btn" id="openChatBtn">Написать</button>
+              <button class="btn primary" id="likeBtn2">❤ Нравится</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div> <!-- /scroll -->
+
+    <!-- Persistent bottom back button -->
+    <div class="bottom-bar">
+      <button class="back-cta" id="backBottomBtn">← Вернуться к списку</button>
+    </div>
+  </div> <!-- /app -->
+
+  <script>
+    const tg = window.Telegram?.WebApp || {}; tg.expand?.();
+    const $ = id => document.getElementById(id);
+    const params = new URLSearchParams(location.search);
+    let currentId = params.get('id');         // user id to show
+    const origin = params.get('origin');      // "lat,lon" from list page (recommended)
+    const meTgId = tg?.initDataUnsafe?.user?.id ?? null;
+
+    // Elements
+    const heroImgWrap = $('heroImg');
+    const heroEmpty = $('heroEmpty');
+    const heroPhoto = $('heroPhoto');
+
+    const goBack = ()=>{ location.href='/list.html'; };
+    $('backBtn').onclick = goBack;
+    $('backBottomBtn').onclick = goBack;
+
+    $('chatBtn').onclick = ()=>{ tg.showAlert?.('Чат скоро будет 😉'); };
+    $('likeBtn').onclick = ()=>{ tg.showPopup ? tg.showPopup({title:'Лайк',message:'Отправили лайк!'}) : alert('Отправили лайк!'); };
+    $('openChatBtn').onclick = ()=>{ $('chatBtn').click(); };
+    $('likeBtn2').onclick = ()=>{ $('likeBtn').click(); };
+
+    const sexEmoji = s => s==='male'?'👨':'👩';
+
+    /* ---------------------- FEED (for swipe) ---------------------- */
+    let feed = [];         // array of {id, user_id, ...}
+    let idx = -1;          // index of currentId in feed
+
+    async function loadFeed(){
+      try{
+        // Prefer session feed if you saved it on list.html
+        const cached = sessionStorage.getItem('aika_last_feed');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length) {
+            feed = parsed;
+          }
+        }
+        if (!feed.length) {
+          let q = '/api/users/nearby?limit=50';
+          if (origin) {
+            q += `&location=${encodeURIComponent(origin)}`;
+          } else if (navigator.geolocation) {
+            await new Promise((res) => {
+              navigator.geolocation.getCurrentPosition(p=>{
+                q += `&location=${p.coords.latitude},${p.coords.longitude}`;
+                res();
+              }, ()=>res(), {enableHighAccuracy:true, timeout:7000, maximumAge:0});
+            });
+          }
+          const resp = await fetch(q);
+          const arr = (await resp.json()) || [];
+          const myIdNum = meTgId == null ? null : Number(meTgId);
+          feed = arr.filter(u => (typeof u.user_id === 'number' ? u.user_id : Number(u.user_id)) !== myIdNum);
+        }
+
+        idx = feed.findIndex(u => String(u.id) === String(currentId));
+        if (idx === -1 && feed.length > 0) {
+          feed.unshift({id: currentId});
+          idx = 0;
+        }
+      } catch(e){
+        console.error('Feed load error', e);
+        feed = [{id: currentId}];
+        idx = 0;
+      }
+    }
+
+    /* ---------------------- Profile load/render ---------------------- */
+    async function fetchProfile(userId, withOrigin){
+      let url = `/api/users/${encodeURIComponent(userId)}`;
+      if (withOrigin && origin) url += `?origin=${encodeURIComponent(origin)}`;
+      const resp = await fetch(url);
+      if(!resp.ok) throw new Error('Profile not found');
+      return resp.json();
+    }
+
+    function setPhoto(urlOrEmpty){
+      if (!urlOrEmpty) {
+        heroPhoto.style.display = 'none';
+        heroEmpty.style.display = 'flex';
+        return;
+      }
+      heroEmpty.style.display = 'none';
+      heroPhoto.src = urlOrEmpty;
+      heroPhoto.alt = '';
+      heroPhoto.style.display = 'block';
+    }
+
+    async function renderProfile(user){
+      const avatarURL = user.avatar_url ? user.avatar_url : (user.avatar_path ? `/${user.avatar_path}` : '');
+      setPhoto(avatarURL);
+
+      $('nick').textContent = user.nickname || '—';
+      $('sex').textContent = sexEmoji(user.sex);
+      $('age').textContent = user.age ? `${user.age} лет` : '';
+      if (typeof user.distance_km === 'number' && user.distance_km > 0) {
+        $('dist').style.display = 'inline';
+        $('dist').textContent = user.distance_km < 1 ? `${Math.round(user.distance_km*1000)} м` : `${user.distance_km.toFixed(1)} км`;
+      } else {
+        $('dist').style.display = 'none';
+      }
+      $('about').textContent = user.about_user || '';
+    }
+
+    async function loadAndShow(userId, {animateFrom} = {}){
+      heroImgWrap.classList.remove('enter-from-left','enter-from-right','enter-active','leave-to-left','leave-to-right');
+      if (animateFrom === 'right') heroImgWrap.classList.add('enter-from-right');
+      if (animateFrom === 'left') heroImgWrap.classList.add('enter-from-left');
+
+      $('loader').style.display = 'block';
+      $('profile').style.display = 'none';
+
+      try{
+        const u = await fetchProfile(userId, true);
+        await renderProfile(u);
+
+        requestAnimationFrame(()=>{ heroImgWrap.classList.add('enter-active'); });
+
+        $('loader').style.display = 'none';
+        $('profile').style.display = 'block';
+      }catch(e){
+        console.error(e);
+        $('loader').innerHTML = 'Профиль недоступен';
+      } finally {
+        setTimeout(()=>{ heroImgWrap.classList.remove('enter-from-left','enter-from-right','enter-active','leave-to-left','leave-to-right'); }, 320);
+      }
+    }
+
+    /* ---------------------- Swipe gestures ---------------------- */
+    let touchStartX=0, touchStartY=0, swiping=false;
+    const SWIPE_MIN = 60;   // px
+    const SWIPE_MAX_Y = 80; // allow mostly horizontal
+
+    function onTouchStart(e){
+      const t = e.touches ? e.touches[0] : e;
+      touchStartX = t.clientX; touchStartY = t.clientY;
+      swiping = true;
+    }
+    function onTouchMove(e){
+      if(!swiping) return;
+      const t = e.touches ? e.touches[0] : e;
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
+      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > SWIPE_MAX_Y) { swiping=false; return; }
+      heroImgWrap.style.transform = `translateX(${dx*0.12}px)`;
+      heroImgWrap.style.opacity = `${Math.max(0.6, 1 - Math.abs(dx)/600)}`;
+    }
+    function onTouchEnd(e){
+      if(!swiping) return;
+      swiping = false;
+      const endX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+      const dx = endX - touchStartX;
+
+      heroImgWrap.style.transform = '';
+      heroImgWrap.style.opacity = '';
+
+      if (Math.abs(dx) < SWIPE_MIN) return;
+      if (dx < 0) { go(+1); } else { go(-1); }
+    }
+
+    $('hero').addEventListener('touchstart', onTouchStart, {passive:true});
+    $('hero').addEventListener('touchmove', onTouchMove, {passive:true});
+    $('hero').addEventListener('touchend', onTouchEnd, {passive:true});
+
+    // Keyboard support (desktop debugging)
+    window.addEventListener('keydown', e=>{
+      if(e.key==='ArrowLeft') go(-1);
+      if(e.key==='ArrowRight') go(+1);
+    });
+
+    async function go(delta){
+      if (!feed.length || idx === -1) return;
+      const nextIdx = idx + delta;
+      if (nextIdx < 0 || nextIdx >= feed.length) return;
+
+      heroImgWrap.classList.remove('enter-from-left','enter-from-right','enter-active','leave-to-left','leave-to-right');
+      heroImgWrap.classList.add(delta>0 ? 'leave-to-left' : 'leave-to-right');
+
+      idx = nextIdx;
+      currentId = feed[idx].id;
+      history.replaceState(null, '', `?id=${encodeURIComponent(currentId)}${origin?`&origin=${encodeURIComponent(origin)}`:''}`);
+
+      await loadAndShow(currentId, {animateFrom: delta>0 ? 'right' : 'left'});
+      $('scrollRoot').scrollTo({top:0, behavior:'smooth'});
+    }
+
+    /* ---------------------- Init ---------------------- */
+    (async function init(){
+      if(!currentId){ $('loader').innerHTML='Пользователь не найден'; return; }
+      await loadFeed();
+      await loadAndShow(currentId);
+    })();
+  </script>
+</body>
+</html>

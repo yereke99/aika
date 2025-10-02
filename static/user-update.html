@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="kz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=no" />
+  <title>AIKA — Профильді жаңарту</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- Yandex Maps v3 -->
+  <script src="https://api-maps.yandex.ru/v3/?apikey=8a3e4da0-9ef2-4176-9203-e7014c1dba6f&lang=ru_RU"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#000}
+    :root{
+      --pad:18px;
+      --radius:14px;
+      --stroke:rgba(255,255,255,.12);
+      --fg-dim:#bdbdbd;
+      --safe-top:env(safe-area-inset-top);
+      --safe-bottom:env(safe-area-inset-bottom);
+      --lockvh:100vh; /* set once via JS to avoid jitter */
+    }
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      color:#fff;
+      overscroll-behavior-y:none;        /* no rubber band */
+      touch-action:manipulation;
+    }
+
+    /* APP WRAPPER: fixed viewport (no page bounce / white bar) */
+    .app{
+      position:fixed; inset:0;
+      display:flex; flex-direction:column;
+      background:#000;
+    }
+    .scroll{
+      flex:1; overflow-y:auto; overflow-x:hidden;
+      -webkit-overflow-scrolling:touch;
+      scrollbar-width:none;
+      overscroll-behavior:contain;
+    }
+    .scroll::-webkit-scrollbar{display:none}
+
+    /* ===== HERO PHOTO (full-bleed, stable height) ===== */
+    .hero{
+      position:relative;
+      width:100%;
+      height:calc(var(--lockvh) * 0.72); /* stable height (no svh/dvh jitter) */
+      background:#111;
+      display:flex;align-items:center;justify-content:center;
+      overflow:hidden;
+    }
+    .hero img{width:100%;height:100%;object-fit:cover;display:block}
+    .hero-empty{
+      width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+      font-size:56px;color:#fff;background:linear-gradient(180deg,#181818,#0f0f0f)
+    }
+
+    /* Simple top-left back button (no brand, no language toggles) */
+    .hero-header{
+      position:absolute; left:0; right:0; top:calc(var(--safe-top,0px) + 10px);
+      display:flex; align-items:center; gap:10px; padding:0 16px; height:44px;
+    }
+    .ghost{
+      padding:8px 12px; background:rgba(0,0,0,.45); backdrop-filter:blur(8px);
+      border:1px solid rgba(255,255,255,.2); border-radius:12px; color:#fff; cursor:pointer; font-weight:700;
+    }
+
+    /* CONTENT */
+    .container{max-width:800px;margin:0 auto;padding:16px}
+
+    /* Photo toolbar BELOW the photo (no overlap) */
+    .toolbar{
+      display:flex; gap:10px; justify-content:center;
+      margin:12px 0 4px;
+    }
+    .chip{
+      padding:10px 14px; border-radius:14px; border:1px solid rgba(255,255,255,.25);
+      background:rgba(255,255,255,.08); color:#fff; font-weight:800; cursor:pointer;
+    }
+
+    .section{
+      margin:16px 0; padding:var(--pad);
+      background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
+      border:1px solid var(--stroke); border-radius:var(--radius)
+    }
+    .title{font-size:16px;font-weight:900;margin-bottom:12px}
+    .grid{display:grid;gap:12px}
+    @media (min-width:560px){ .grid.cols-2{grid-template-columns:1fr 1fr} }
+    .label{font-size:13px;color:var(--fg-dim);margin-bottom:6px}
+    .input,.select,.textarea{
+      width:100%;padding:14px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.15);
+      background:#121212;color:#fff;font-size:16px
+    }
+    .textarea{min-height:140px;resize:vertical;line-height:1.6}
+
+    .actions{display:flex; gap:10px; margin:18px 0 calc(26px + var(--safe-bottom,0px))}
+    .btn{
+      flex:1; padding:14px 16px; border-radius:12px; border:1px solid rgba(255,255,255,.2);
+      background:#1b1b1b; color:#fff; cursor:pointer; font-weight:900; font-size:16px;
+    }
+    .btn.primary{ background:linear-gradient(45deg,#ff006e,#ff4d94); border:none }
+
+    .status{font-size:13px;color:#bdbdbd}
+
+    /* Centered bottom toast */
+    .toast{
+      position:fixed; left:50%;
+      bottom:calc(var(--safe-bottom,0px) + 16px);
+      transform:translateX(-50%) translateY(20px);
+      background:rgba(0,0,0,.85);
+      border:1px solid rgba(255,255,255,.2);
+      color:#fff; padding:10px 14px; border-radius:12px;
+      opacity:0; pointer-events:none;
+      transition:opacity .25s ease, transform .25s ease;
+      z-index:1000;
+    }
+    .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="scroll" id="scrollRoot">
+      <!-- HERO -->
+      <div class="hero" id="hero">
+        <div class="hero-header">
+          <button class="ghost" id="backBtn">←</button>
+        </div>
+        <div id="heroContent" class="hero-empty">📸</div>
+      </div>
+
+      <!-- Photo actions BELOW hero -->
+      <div class="container">
+        <div class="toolbar">
+          <button class="chip" id="uploadBtn">📁 <span data-i18n="upload">Жүктеу</span></button>
+          <button class="chip" id="photoBtn">📷 <span data-i18n="camera">Камера</span></button>
+          <input type="file" id="fileInput" accept="image/*" style="display:none"/>
+        </div>
+
+        <!-- FORM -->
+        <div class="section">
+          <div class="title" data-i18n="basic">Негізгі мәліметтер</div>
+          <div class="grid cols-2">
+            <div>
+              <div class="label" data-i18n="nicknameLbl">Никнейм</div>
+              <input class="input" id="nickname" placeholder="Никнейм" />
+            </div>
+            <div>
+              <div class="label" data-i18n="sexLbl">Жынысы</div>
+              <select class="select" id="sex">
+                <option value="male" data-i18n="male">Ер адам</option>
+                <option value="female" data-i18n="female">Әйел адам</option>
+              </select>
+            </div>
+            <div>
+              <div class="label" data-i18n="ageLbl">Жасы</div>
+              <input class="input" type="number" min="18" max="100" id="age" placeholder="18" />
+            </div>
+            <div>
+              <div class="label" data-i18n="geoLbl">Геолокация</div>
+              <button class="btn" id="geoBtnForm">📍 <span data-i18n="getGeo">Гео алу</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="title" data-i18n="aboutTitle">Өзім туралы</div>
+          <textarea class="textarea" id="about" placeholder="Өзіңіз туралы еркін жазыңыз..."></textarea>
+          <div class="status" id="status"></div>
+          <div class="label" style="margin-top:10px" data-i18n="tip">
+            Кеңес: қызығушылықтарыңызды, қалаған таныстық түрін және байланысқа ашық екеніңізді жазыңыз.
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="cancelBtn" data-i18n="cancel">Бас тарту</button>
+          <button class="btn primary" id="saveBtn" data-i18n="save">Сақтау</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Centered toast -->
+    <div class="toast" id="toast">✅</div>
+  </div>
+
+  <script>
+    const tg = window.Telegram?.WebApp || {}; tg.expand?.();
+    const Y = window.ymaps3;
+    const Y_READY = (async()=>{ try{ if(!Y || !Y.ready) throw 0; await Y.ready; }catch(_){ /* noop */ } })();
+
+    // Lock viewport height ONCE to avoid vertical shaking/jitter
+    (function lockVH(){
+      const h = (window.visualViewport?.height || window.innerHeight) + 'px';
+      document.documentElement.style.setProperty('--lockvh', h);
+      // Re-lock only on orientation change
+      window.addEventListener('orientationchange', ()=>{
+        setTimeout(()=>{
+          const hh = (window.visualViewport?.height || window.innerHeight) + 'px';
+          document.documentElement.style.setProperty('--lockvh', hh);
+        }, 300);
+      }, {passive:true});
+    })();
+
+    const $ = id => document.getElementById(id);
+
+    /* ===== i18n (default to page lang — no UI switch here) ===== */
+    const dict = {
+      kz:{upload:'Жүктеу',camera:'Камера',getGeo:'Гео алу',basic:'Негізгі мәліметтер',nicknameLbl:'Никнейм',sexLbl:'Жынысы',male:'Ер адам',female:'Әйел адам',ageLbl:'Жасы',geoLbl:'Геолокация',aboutTitle:'Өзім туралы',tip:'Кеңес: қызығушылықтарыңызды, қалаған таныстық түрін және байланысқа ашық екеніңізді жазыңыз.',cancel:'Бас тарту',save:'Сақтау',loadingErr:'Жүктеу қатесі',saved:'✅ Сақталды',notFound:'Профиль табылмады. Алдымен тіркеліңіз.',geoErr:'Геолокация қатесі',saving:'⏳ Сақталуда...'},
+      ru:{upload:'Загрузить',camera:'Камера',getGeo:'Получить гео',basic:'Основные данные',nicknameLbl:'Никнейм',sexLbl:'Пол',male:'Мужчина',female:'Женщина',ageLbl:'Возраст',geoLbl:'Геолокация',aboutTitle:'О себе',tip:'Совет: укажите интересы, формат знакомства и открытость к общению.',cancel:'Отмена',save:'Сохранить',loadingErr:'Ошибка загрузки',saved:'✅ Сохранено',notFound:'Профиль не найден. Сначала зарегистрируйтесь.',geoErr:'Ошибка геолокации',saving:'⏳ Сохраняем...'}
+    };
+    let lang = (document.documentElement.lang || 'kz').toLowerCase();
+    function applyLang(){
+      document.querySelectorAll('[data-i18n]').forEach(el=>{
+        const key = el.getAttribute('data-i18n'); if(dict[lang][key]) el.textContent = dict[lang][key];
+      });
+      $('nickname').placeholder = 'Никнейм';
+    }
+    applyLang();
+
+    /* ===== Nav ===== */
+    $('backBtn').onclick = ()=>{ history.length>1 ? history.back() : location.href='/welcome.html'; };
+    $('cancelBtn').onclick = ()=>{ location.href='/list.html'; };
+
+    /* ===== Toast ===== */
+    function showToast(msg){
+      const t = $('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(showToast._tmr);
+      showToast._tmr = setTimeout(()=>t.classList.remove('show'), 1600);
+    }
+
+    /* ===== Photo ===== */
+    let avatarFile=null, userId=null, lat=null, lon=null;
+
+    function setHero(content){
+      const wrap = $('heroContent');
+      if(!content){ wrap.className='hero-empty'; wrap.innerHTML='📸'; return; }
+      if(content.startsWith('http') || content.startsWith('/')){
+        wrap.className=''; wrap.innerHTML=`<img src="${content}" alt="avatar" loading="lazy">`;
+      } else if (content.startsWith('data:image')){
+        wrap.className=''; wrap.innerHTML=`<img src="${content}" alt="avatar">`;
+      } else {
+        wrap.className='hero-empty'; wrap.textContent=content;
+      }
+    }
+
+    $('uploadBtn').onclick = (e)=>{ e.preventDefault(); const fi=$('fileInput'); fi.removeAttribute('capture'); fi.click(); };
+    $('photoBtn').onclick = (e)=>{ e.preventDefault(); const fi=$('fileInput'); fi.setAttribute('accept','image/*;capture=camera'); fi.setAttribute('capture','environment'); fi.click(); };
+    $('fileInput').onchange = (e)=>{
+      const f=e.target.files?.[0]; if(!f) return;
+      avatarFile=f; const rd=new FileReader();
+      rd.onload=ev=> setHero(ev.target.result);
+      rd.readAsDataURL(f);
+    };
+
+    /* ===== Geolocation ===== */
+    async function getGeo(){
+      const btn=$('geoBtnForm');
+      const prev = btn.innerHTML;
+      btn.disabled=true; btn.innerHTML = '⏳ ' + (lang==='kz'?dict.kz.saving:dict.ru.saving);
+      try{
+        await Y_READY;
+        if(window.ymaps3?.geolocation?.getPosition){
+          const pos=await ymaps3.geolocation.getPosition(); const [LON,LAT]=pos.coords||[]; lat=LAT; lon=LON;
+        }
+        if((lat==null || lon==null) && navigator.geolocation){
+          await new Promise((res,rej)=>{
+            navigator.geolocation.getCurrentPosition(p=>{ lat=p.coords.latitude; lon=p.coords.longitude; res(); },
+              err=>rej(err),{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+          });
+        }
+        showToast(lang==='kz'?'📍 Гео алынды':'📍 Гео получено');
+      }catch(e){
+        console.error(e);
+        alert(lang==='kz'?dict.kz.geoErr:dict.ru.geoErr);
+      } finally {
+        btn.disabled=false; btn.innerHTML = prev;
+      }
+    }
+    $('geoBtnForm').onclick=getGeo;
+
+    /* ===== Load/Refresh profile ===== */
+    async function refreshProfile(){
+      if(!userId) return;
+      try{
+        const r = await fetch(`/api/users/${encodeURIComponent(userId)}`);
+        if(!r.ok){ $('status').textContent=(lang==='kz'?dict.kz.loadingErr:dict.ru.loadingErr); return; }
+        const u = await r.json();
+        const avatarURL = u.avatar_url ? u.avatar_url : (u.avatar_path ? `/${u.avatar_path}` : '');
+        setHero(avatarURL || '📸');
+        $('nickname').value = u.nickname || '';
+        $('sex').value = (u.sex==='male'||u.sex==='female')?u.sex:'male';
+        $('age').value = u.age || '';
+        $('about').value = u.about_user || '';
+        if(typeof u.latitude==='number') lat=u.latitude;
+        if(typeof u.longitude==='number') lon=u.longitude;
+      }catch(e){ console.error(e); }
+    }
+
+    (async function init(){
+      const uid = tg.initDataUnsafe?.user?.id;
+      if(!uid){ $('status').textContent='Telegram user not found'; return; }
+      try{
+        const check = await fetch('/api/user/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telegram_id:uid})});
+        const res = await check.json();
+        if(!res.exists){ $('status').textContent=(lang==='kz'?dict.kz.notFound:dict.ru.notFound); return; }
+        userId = res.user_id; await refreshProfile();
+      }catch(e){
+        console.error(e); $('status').textContent=(lang==='kz'?dict.kz.loadingErr:dict.ru.loadingErr);
+      }
+    })();
+
+    /* ===== Save (stay & refresh) ===== */
+    $('saveBtn').onclick = async ()=>{
+      const uid = tg.initDataUnsafe?.user?.id;
+      if(!uid){ alert('Telegram user not found'); return; }
+
+      const fd=new FormData();
+      fd.append('telegram_id', String(uid));
+      if(userId) fd.append('user_id', userId);
+      if($('nickname').value.trim()) fd.append('nickname',$('nickname').value.trim());
+      fd.append('sex',$('sex').value);
+      if($('age').value) fd.append('age',$('age').value);
+      fd.append('about_user',$('about').value.trim());
+      if(lat!=null) fd.append('latitude', String(lat));
+      if(lon!=null) fd.append('longitude', String(lon));
+      if(avatarFile) fd.append('avatar', avatarFile);
+
+      const btn=$('saveBtn'); const prev=btn.textContent;
+      btn.disabled=true; btn.textContent=(lang==='kz'?dict.kz.saving:dict.ru.saving);
+      $('status').textContent='';
+      try{
+        const resp=await fetch('/api/user/update',{method:'POST',body:fd});
+        const data=await resp.json();
+        if(resp.ok && data.success){
+          await refreshProfile();
+          avatarFile=null;
+          showToast(lang==='kz'?dict.kz.saved:dict.ru.saved);
+        } else {
+          alert(data.error || 'Error');
+        }
+      }catch(e){ console.error(e); alert('Error'); }
+      finally{ btn.disabled=false; btn.textContent=prev; }
+    };
+  </script>
+</body>
+</html>

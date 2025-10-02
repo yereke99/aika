@@ -1,0 +1,79 @@
+<!-- static/welcome.html -->
+<!DOCTYPE html>
+<html lang="kz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=no">
+  <title>AIKA - Қош келдіңіз</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background: linear-gradient(135deg,#000 0%,#1a0033 100%); color:#fff;
+      height: var(--tg-viewport-stable-height, 100vh);
+      padding-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px) + 15px);
+      padding-bottom: calc(var(--tg-safe-area-inset-bottom, 0px) + 20px);
+      display:flex;align-items:center;justify-content:center;padding-left:20px;padding-right:20px;
+    }
+    .container{text-align:center;max-width:520px}
+    .logo{font-size:64px;margin-bottom:20px;animation:pulse 2s ease-in-out infinite}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+    .brand{font-size:48px;font-weight:900;letter-spacing:8px;background:linear-gradient(45deg,#ff006e,#ff4d94,#ff80b3);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:15px}
+    .tagline{font-size:18px;color:#b3b3b3;margin-bottom:30px}
+    .welcome-text{font-size:22px;margin-bottom:28px;line-height:1.5}
+    .btn-container{display:flex;flex-direction:column;gap:12px}
+    .btn{padding:16px 36px;border:none;border-radius:12px;font-size:18px;font-weight:800;cursor:pointer;transition:.2s;text-decoration:none;display:inline-block}
+    .btn-primary{background:linear-gradient(45deg,#ff006e,#ff4d94);color:#fff}
+    .btn-secondary{background:rgba(255,255,255,.1);color:#fff;border:2px solid rgba(255,255,255,.3)}
+    .btn:active{transform:scale(.98)}
+    .features{margin-top:40px;text-align:left}
+    .feature{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding:12px;background:rgba(255,255,255,.06);border-radius:10px}
+    .feature-icon{font-size:28px}
+    .feature-text{font-size:16px;color:#ccc}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">💕</div>
+    <div class="brand">AIKA</div>
+    <div class="tagline">Жаңа танысулар әлемі</div>
+    <div class="welcome-text">Қош келдіңіз! AIKA-мен жаңа адамдармен танысыңыз</div>
+
+    <div class="btn-container">
+      <a href="/register.html" class="btn btn-primary" id="startBtn">🚀 Бастау</a>
+      <a href="/list.html" class="btn btn-secondary" id="browseBtn">👥 Адамдарды қарау</a>
+      <!-- Бұл батырма тек профиль бар болса көрсетіледі -->
+      <a href="/user-update.html" class="btn btn-secondary" id="myProfileBtn" style="display:none;">👤 Менің профилімді қарау</a>
+    </div>
+
+    <div class="features">
+      <div class="feature"><div class="feature-icon">📍</div><div class="feature-text">Жақын маңдағы адамдарды табыңыз</div></div>
+      <div class="feature"><div class="feature-icon">💬</div><div class="feature-text">Қызықты әңгімелесулер</div></div>
+      <div class="feature"><div class="feature-icon">🔒</div><div class="feature-text">Қауіпсіз және жеке</div></div>
+    </div>
+  </div>
+
+  <script>
+    const tg=window.Telegram?.WebApp||{}; tg.expand?.();
+
+    async function checkUser(){
+      const user=tg.initDataUnsafe?.user;
+      if(!user?.id) return;
+      try{
+        const resp=await fetch('/api/user/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telegram_id:user.id})});
+        const data=await resp.json();
+        if(data.exists){
+          // Пайдаланушы бар: негізгі батырманы профильге ауыстырамыз, және «Менің профилімді қарау» батырмасын көрсетеміз
+          const startBtn=document.getElementById('startBtn');
+          startBtn.textContent='👤 Профильге өту';
+          startBtn.href='/user-update.html';
+          document.getElementById('myProfileBtn').style.display='inline-block';
+        }
+      }catch(e){ console.error(e); }
+    }
+    checkUser();
+  </script>
+</body>
+</html>

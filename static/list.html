@@ -1,0 +1,359 @@
+<!-- static/list.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=no" />
+  <title>AIKA - Люди рядом</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background:#000;color:#fff;
+      height:var(--tg-viewport-stable-height,100vh);
+      padding-top:calc(var(--tg-safe-area-inset-top,0px) + var(--tg-content-safe-area-inset-top,0px) + 15px);
+      padding-bottom:calc(var(--tg-safe-area-inset-bottom,0px) + 15px);
+      overflow-y:auto;
+    }
+    .header{
+      position:sticky;top:calc(var(--tg-safe-area-inset-top,0px) + var(--tg-content-safe-area-inset-top,0px) + 10px);
+      background:rgba(0,0,0,.95);backdrop-filter:blur(10px);
+      padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.08);z-index:100
+    }
+    .header-content{
+      max-width:600px;margin:0 auto;display:flex;align-items:center;gap:10px;
+    }
+    .brand{
+      font-size:22px;font-weight:900;letter-spacing:3px;background:linear-gradient(45deg,#ff006e,#ff4d94);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text
+    }
+    .spacer{flex:1}
+    .ghost-btn{
+      padding:8px 14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);
+      border-radius:18px;color:#fff;cursor:pointer;font-size:13px;transition:.2s;white-space:nowrap
+    }
+    .ghost-btn:hover{background:rgba(255,255,255,.12)}
+    .filter-btn{margin-left:8px}
+    .lang-switch{
+      position:sticky;top:calc(var(--tg-safe-area-inset-top,0px) + var(--tg-content-safe-area-inset-top,0px) + 60px);
+      display:flex;gap:10px;justify-content:flex-end;max-width:600px;margin:0 auto;padding:8px 20px;z-index:99
+    }
+    .lang-btn{
+      padding:6px 14px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);
+      border-radius:18px;color:#fff;cursor:pointer;font-size:13px;transition:.2s
+    }
+    .lang-btn.active{background:linear-gradient(45deg,#ff006e,#ff4d94);border-color:transparent}
+    .container{max-width:600px;margin:0 auto;padding:16px 20px}
+    .user-card{
+      background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+      border-radius:16px;padding:15px;margin-bottom:12px;display:flex;gap:15px;cursor:pointer;transition:.2s
+    }
+    .user-card:hover{background:rgba(255,255,255,.08);border-color:rgba(255,0,110,.3);transform:translateY(-1px)}
+    /* CIRCLE AVATAR */
+    .user-avatar{
+      width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.1);flex-shrink:0;overflow:hidden;
+      border:2px solid rgba(255,0,110,.3);display:flex;align-items:center;justify-content:center
+    }
+    .user-avatar img{width:100%;height:100%;object-fit:cover}
+    .user-avatar-placeholder{font-size:28px}
+    .user-info{flex:1;min-width:0}
+    .user-header{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+    .user-nickname{font-size:17px;font-weight:600;color:#fff}
+    .user-meta{font-size:13px;color:#808080;display:flex;align-items:center;gap:10px;margin-bottom:6px}
+    .user-about{font-size:13px;color:#b3b3b3;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .distance{font-size:12px;color:#ff3d84;font-weight:700}
+    .loader{text-align:center;padding:40px;color:#808080}
+    .loader-spinner{width:40px;height:40px;border:4px solid rgba(255,255,255,.1);border-top-color:#ff006e;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 15px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .empty-state{text-align:center;padding:60px 20px;color:#808080}
+    .empty-state-icon{font-size:64px;margin-bottom:16px}
+    .filter-sheet{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);display:none;z-index:200}
+    .sheet-inner{position:absolute;left:0;right:0;bottom:0;background:#111;border-top-left-radius:16px;border-top-right-radius:16px;
+      padding:16px 16px 20px;max-width:640px;margin:0 auto;border:1px solid rgba(255,255,255,.08)}
+    .sheet-title{font-weight:700;margin-bottom:10px}
+    .row{display:flex;gap:10px;margin-bottom:10px}
+    .row > *{flex:1}
+    .input,.select{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:#1a1a1a;color:#fff;font-size:14px}
+    .actions{display:flex;gap:10px;margin-top:12px}
+    .btn{flex:1;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:#1a1a1a;color:#fff;cursor:pointer;font-weight:700}
+    .btn.primary{background:linear-gradient(45deg,#ff006e,#ff4d94);border:none}
+
+    /* Toast for "push" */
+    .toast{
+      position:fixed; left:50%;
+      bottom:calc(var(--tg-safe-area-inset-bottom,0px) + 16px);
+      transform:translateX(-50%) translateY(20px);
+      background:rgba(0,0,0,.85);
+      border:1px solid rgba(255,255,255,.2);
+      color:#fff; padding:10px 14px; border-radius:12px;
+      opacity:0; pointer-events:none;
+      transition:opacity .25s ease, transform .25s ease;
+      z-index:1000;
+    }
+    .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-content">
+      <div class="brand">AIKA</div>
+      <div class="spacer"></div>
+      <button class="ghost-btn" id="myProfileBtnHead">👤 Мой профиль</button>
+      <button class="ghost-btn filter-btn" id="filterBtn">🔍 Фильтр</button>
+    </div>
+  </div>
+
+  <div class="lang-switch">
+    <button class="lang-btn active" id="ru-btn">RU</button>
+    <button class="lang-btn" id="kz-btn">KZ</button>
+  </div>
+
+  <div class="container">
+    <div id="loader" class="loader">
+      <div class="loader-spinner"></div>
+      <div id="loaderText">Загружаем людей рядом...</div>
+    </div>
+    <div id="usersList"></div>
+    <div id="emptyState" class="empty-state" style="display:none;">
+      <div class="empty-state-icon">💔</div>
+      <div class="empty-state-text" id="emptyText">Пока никого нет рядом</div>
+      <div style="font-size:14px;color:#666" id="tryLater">Попробуйте позже</div>
+    </div>
+  </div>
+
+  <!-- Filter sheet -->
+  <div class="filter-sheet" id="sheet">
+    <div class="sheet-inner">
+      <div class="sheet-title" id="sheetTitle">Фильтр</div>
+      <div class="row">
+        <div>
+          <label style="font-size:12px;color:#aaa" id="radiusLbl">Радиус, км (1–300)</label>
+          <input class="input" type="number" min="1" max="300" id="radiusInput" value="50" />
+        </div>
+        <div>
+          <label style="font-size:12px;color:#aaa" id="sexLbl">Пол</label>
+          <select class="select" id="sexInput">
+            <option value="">Любой</option>
+            <option value="male">Мужчина</option>
+            <option value="female">Женщина</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label style="font-size:12px;color:#aaa" id="ageFromLbl">Возраст от</label>
+          <input class="input" type="number" min="18" max="100" id="ageFromInput" placeholder="18" />
+        </div>
+        <div>
+          <label style="font-size:12px;color:#aaa" id="ageToLbl">Возраст до</label>
+          <input class="input" type="number" min="18" max="100" id="ageToInput" placeholder="100" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label style="font-size:12px;color:#aaa" id="qLbl">Поиск (о себе/ник)</label>
+          <input class="input" type="text" id="qInput" placeholder="спорт, музыка..." />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="resetBtn">Сброс</button>
+        <button class="btn primary" id="applyBtn">Показать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">✅</div>
+
+  <script>
+    const t={
+      ru:{filter:'🔍 Фильтр',my:'👤 Мой профиль',loading:'Загружаем людей рядом...',empty:'Пока никого нет рядом',tryLater:'Попробуйте позже',years:'лет',male:'👨',female:'👩',
+          sheetTitle:'Фильтр',radius:'Радиус, км (1–300)',sex:'Пол',any:'Любой',ageFrom:'Возраст от',ageTo:'Возраст до',q:'Поиск (о себе/ник)',reset:'Сброс',show:'Показать',
+          newUsers:(n)=>`✨ Новые рядом: ${n}`},
+      kz:{filter:'🔍 Сүзгі',my:'👤 Менің профилім',loading:'Жақын маңдағы адамдарды жүктеу...',empty:'Жақын маңда әлі ешкім жоқ',tryLater:'Кейінірек көріңіз',years:'жас',male:'👨',female:'👩',
+          sheetTitle:'Сүзгі',radius:'Радиус, км (1–300)',sex:'Жынысы',any:'Кез келген',ageFrom:'Жасы (ең аз)',ageTo:'Жасы (ең көп)',q:'Іздеу (өзім/ник)',reset:'Тазарту',show:'Көрсету',
+          newUsers:(n)=>`✨ Жаңа адамдар: ${n}`}
+    };
+
+    const tg=window.Telegram?.WebApp||{}; tg.expand?.();
+    const $=id=>document.getElementById(id);
+
+    // Current Telegram user id (for self-filtering)
+    const currentTelegramId = tg.initDataUnsafe?.user?.id ?? null;
+
+    let lang='ru';
+    function setLang(l){
+      lang=l;
+      $('ru-btn').classList.toggle('active',l==='ru');
+      $('kz-btn').classList.toggle('active',l==='kz');
+      $('filterBtn').textContent=t[l].filter;
+      $('myProfileBtnHead').textContent=t[l].my;
+      $('loaderText').textContent=t[l].loading;
+      $('emptyText').textContent=t[l].empty;
+      $('tryLater').textContent=t[l].tryLater;
+      $('sheetTitle').textContent=t[l].sheetTitle;
+      $('radiusLbl').textContent=t[l].radius;
+      $('sexLbl').textContent=t[l].sex;
+      $('sexInput').options[0].text=t[l].any;
+      $('sexInput').options[1].text=(l==='ru'?'Мужчина':'Ер адам');
+      $('sexInput').options[2].text=(l==='ru'?'Женщина':'Әйел адам');
+      $('ageFromLbl').textContent=t[l].ageFrom;
+      $('ageToLbl').textContent=t[l].ageTo;
+      $('qLbl').textContent=t[l].q;
+      $('resetBtn').textContent=t[l].reset;
+      $('applyBtn').textContent=t[l].show;
+    }
+    $('ru-btn').onclick=()=>setLang('ru');
+    $('kz-btn').onclick=()=>setLang('kz');
+
+    // "My profile" opens update page
+    $('myProfileBtnHead').onclick=()=>{ location.href='/user-update.html'; };
+
+    function sexEmoji(sex){return sex==='male'?t[lang].male:t[lang].female;}
+
+    // Toast helper
+    function showToast(msg){
+      const el=$('toast'); el.textContent=msg;
+      el.classList.add('show');
+      try{ tg.HapticFeedback?.notificationOccurred('success'); }catch(_){}
+      clearTimeout(showToast._tmr);
+      showToast._tmr=setTimeout(()=>el.classList.remove('show'),1600);
+    }
+
+    let currentLocation=null;
+    let lastQuery={radius_km:50,sex:'',age_min:null,age_max:null,q:''};
+    let shownIds=new Set();        // what’s currently rendered
+    let polling=false;             // guard for concurrent polls
+
+    $('filterBtn').onclick=()=>{$('sheet').style.display='block';};
+    $('resetBtn').onclick=()=>{$('radiusInput').value=50;$('sexInput').value='';$('ageFromInput').value='';$('ageToInput').value='';$('qInput').value='';};
+    $('applyBtn').onclick=async()=>{
+      $('sheet').style.display='none';
+      lastQuery.radius_km=Math.min(300,Math.max(1,Number($('radiusInput').value||50)));
+      lastQuery.sex=$('sexInput').value;
+      lastQuery.age_min=$('ageFromInput').value?Number($('ageFromInput').value):null;
+      lastQuery.age_max=$('ageToInput').value?Number($('ageToInput').value):null;
+      lastQuery.q=$('qInput').value.trim();
+      await fetchUsers({initial:false,fullRerender:true});
+    };
+    $('sheet').onclick=e=>{if(e.target.id==='sheet'){$('sheet').style.display='none';}};
+
+    function renderUser(u){
+      const dist=(typeof u.distance_km==='number'&&u.distance_km>0)?u.distance_km:null;
+      const distanceText=dist!=null?`<span class="distance">📍 ${dist<1?Math.round(dist*1000)+' м':dist.toFixed(1)+' км'}</span>`:'';
+      const avatarURL = u.avatar_url ? u.avatar_url : (u.avatar_path ? `/${u.avatar_path}` : '');
+      const avatar = avatarURL ? `<img src="${avatarURL}" alt="${u.nickname}" loading="lazy">` : `<div class="user-avatar-placeholder">${sexEmoji(u.sex)}</div>`;
+      return `<div class="user-card" data-id="${u.id}" onclick="openProfile('${u.id}')">
+          <div class="user-avatar">${avatar}</div>
+          <div class="user-info">
+            <div class="user-header"><span class="user-nickname">${u.nickname || '—'}</span></div>
+            <div class="user-meta"><span>${sexEmoji(u.sex)}</span><span>${u.age ?? ''} ${u.age? t[lang].years:''}</span>${distanceText}</div>
+            <div class="user-about">${u.about_user? (u.about_user) : ''}</div>
+          </div>
+        </div>`;
+    }
+
+    async function loadUsers(){
+      try{
+        if(navigator.geolocation){
+          navigator.geolocation.getCurrentPosition(
+            async pos=>{currentLocation={latitude:pos.coords.latitude,longitude:pos.coords.longitude};await fetchUsers({initial:true});startPolling();},
+            async ()=>{currentLocation=null;await fetchUsers({initial:true});startPolling();},
+            {enableHighAccuracy:true,timeout:15000,maximumAge:0}
+          );
+        } else { await fetchUsers({initial:true}); startPolling(); }
+      }catch(e){ console.error(e); showEmpty(); }
+    }
+
+    function buildNearbyUrl(){
+      let url='/api/users/nearby?limit=50';
+      if(currentLocation){url+=`&location=${currentLocation.latitude},${currentLocation.longitude}&radius_km=${encodeURIComponent(lastQuery.radius_km)}`;}
+      if(lastQuery.sex) url+=`&sex=${encodeURIComponent(lastQuery.sex)}`;
+      if(lastQuery.age_min!=null) url+=`&age_min=${lastQuery.age_min}`;
+      if(lastQuery.age_max!=null) url+=`&age_max=${lastQuery.age_max}`;
+      if(lastQuery.q) url+=`&q=${encodeURIComponent(lastQuery.q)}`;
+      return url;
+    }
+
+    function filterOutSelf(arr){
+      const myId = currentTelegramId == null ? null : Number(currentTelegramId);
+      return Array.isArray(arr)
+        ? arr.filter(u => (typeof u.user_id === 'number' ? u.user_id : Number(u.user_id)) !== myId)
+        : [];
+    }
+
+    // initial load OR manual filter rerender
+    async function fetchUsers({initial=false, fullRerender=false}={}){
+      if(!fullRerender){ $('usersList').innerHTML=''; $('emptyState').style.display='none'; $('loader').style.display='block'; }
+      try{
+        const resp=await fetch(buildNearbyUrl());
+        const users=filterOutSelf(await resp.json());
+
+        $('loader').style.display='none';
+        if(!users.length){ showEmpty(); shownIds.clear(); sessionStorage.setItem('aika_last_feed', JSON.stringify([])); return; }
+
+        // render
+        const html = users.map(renderUser).join('');
+        $('usersList').innerHTML = html;
+        shownIds = new Set(users.map(u => String(u.id)));
+
+        // persist feed for detail page swipe
+        sessionStorage.setItem('aika_last_feed', JSON.stringify(users));
+      }catch(e){ console.error(e); showEmpty(); }
+    }
+
+    // silent background poll every 5s, prepend new users only
+    async function silentUpdate(){
+      try{
+        const resp=await fetch(buildNearbyUrl());
+        const latest=filterOutSelf(await resp.json());
+
+        if(!Array.isArray(latest) || !latest.length) return;
+
+        // find genuinely new users (by id)
+        const newOnes = latest.filter(u => !shownIds.has(String(u.id)));
+        if(newOnes.length){
+          // prepend new users at the top, newest first (keep API order)
+          for(let i=newOnes.length-1;i>=0;i--){
+            $('usersList').insertAdjacentHTML('afterbegin', renderUser(newOnes[i]));
+            shownIds.add(String(newOnes[i].id));
+          }
+
+          // toast + haptic
+          showToast(t[lang].newUsers(newOnes.length));
+
+          // cap DOM list (optional 100 items)
+          const cards = document.querySelectorAll('.user-card');
+          for(let i=100;i<cards.length;i++){ cards[i].remove(); }
+
+          // update session feed (merge new + existing)
+          const existing = JSON.parse(sessionStorage.getItem('aika_last_feed') || '[]');
+          const byId = new Map();
+          [...newOnes, ...existing].forEach(u => byId.set(String(u.id), u));
+          const merged = [...newOnes, ...existing.filter(u=>!newOnes.find(n=>String(n.id)===String(u.id)))];
+          sessionStorage.setItem('aika_last_feed', JSON.stringify(merged));
+        }
+      }catch(e){ /* silent */ }
+    }
+
+    function startPolling(){
+      setInterval(async ()=>{
+        if(polling) return;
+        polling=true;
+        try{ await silentUpdate(); } finally { polling=false; }
+      }, 5000);
+    }
+
+    function showEmpty(){ $('loader').style.display='none'; $('emptyState').style.display='block'; }
+
+    window.openProfile = function(id){
+      const qs=currentLocation?`?id=${encodeURIComponent(id)}&origin=${currentLocation.latitude},${currentLocation.longitude}`:`?id=${encodeURIComponent(id)}`;
+      location.href=`/user-detail.html${qs}`;
+    };
+
+    setLang('ru');
+    loadUsers();
+  </script>
+</body>
+</html>

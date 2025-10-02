@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="kz">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+  />
+  <title>AIKA - Тіркелу</title>
+
+  <!-- Telegram Mini App -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- Yandex Maps JS API v3.0 -->
+  <script src="https://api-maps.yandex.ru/v3/?apikey=8a3e4da0-9ef2-4176-9203-e7014c1dba6f&lang=ru_RU"></script>
+
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body {
+      font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background:var(--tg-theme-bg-color,#fff);
+      color:var(--tg-theme-text-color,#000);
+      min-height:100vh; padding:15px; padding-top:80px;
+      overflow-y:auto; overflow-x:hidden;
+    }
+    .container { max-width:500px; margin:0 auto; padding:10px; }
+    .lang-switch { position:fixed; top:55px; right:15px; display:flex; gap:8px; z-index:100; }
+    .lang-btn {
+      padding:8px 16px; background:rgba(128,128,128,.2); border:1px solid rgba(128,128,128,.3);
+      border-radius:16px; color:var(--tg-theme-text-color,#000); cursor:pointer; font-size:13px; font-weight:600;
+      transition:.2s; -webkit-user-select:none; user-select:none;
+    }
+    .lang-btn.active { background:linear-gradient(45deg,#ff006e,#ff4d94); border-color:#ff006e; color:#fff; }
+    .lang-btn:active { transform:scale(.95); }
+    .header { text-align:center; margin-bottom:25px; }
+    .brand {
+      font-size:28px; font-weight:900; letter-spacing:4px; background:linear-gradient(45deg,#ff006e,#ff4d94);
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+    }
+    .subtitle { font-size:13px; color:var(--tg-theme-hint-color,#999); margin-top:5px; }
+    .avatar-upload { text-align:center; margin-bottom:25px; }
+    .avatar-preview {
+      width:100px; height:100px; border-radius:50%; background:rgba(128,128,128,.1);
+      margin:0 auto 12px; display:flex; align-items:center; justify-content:center; overflow:hidden;
+      border:2px solid rgba(255,0,110,.3);
+    }
+    .avatar-preview img { width:100%; height:100%; object-fit:cover; }
+    .avatar-placeholder { font-size:40px; }
+    .avatar-buttons { display:flex; gap:10px; justify-content:center; align-items:center; }
+    .avatar-btn {
+      padding:10px 18px; background:rgba(128,128,128,.15); border:1px solid rgba(128,128,128,.3);
+      border-radius:16px; color:var(--tg-theme-text-color,#000); cursor:pointer; font-size:14px; font-weight:500;
+      display:flex; align-items:center; gap:6px; transition:.2s; -webkit-user-select:none; user-select:none;
+    }
+    .avatar-btn:active { background:rgba(128,128,128,.3); transform:scale(.95); }
+    .form-group { margin-bottom:18px; }
+    .form-label { display:block; font-size:14px; color:var(--tg-theme-hint-color,#666); margin-bottom:8px; font-weight:600; }
+    .form-input {
+      width:100%; padding:12px; background:var(--tg-theme-secondary-bg-color,#f0f0f0);
+      border:1px solid rgba(128,128,128,.2); border-radius:10px; color:var(--tg-theme-text-color,#000); font-size:15px; transition:.2s;
+    }
+    .form-input:focus { outline:none; border-color:#ff006e; background:var(--tg-theme-bg-color,#fff); }
+    .form-input::placeholder { color:var(--tg-theme-hint-color,#999); }
+    .form-textarea { min-height:80px; resize:vertical; font-family:inherit; }
+    .sex-select { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+    .sex-option {
+      padding:14px; background:var(--tg-theme-secondary-bg-color,#f0f0f0); border:2px solid rgba(128,128,128,.2);
+      border-radius:12px; text-align:center; cursor:pointer; transition:.2s; font-size:16px; -webkit-user-select:none; user-select:none;
+    }
+    .sex-option:active { transform:scale(.97); }
+    .sex-option.selected { border-color:#ff006e; background:rgba(255,0,110,.15); }
+    .location-btn {
+      width:100%; padding:14px; background:linear-gradient(45deg,#ff006e,#ff4d94); border:none; border-radius:12px;
+      color:#fff; font-size:15px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; transition:.2s;
+      -webkit-user-select:none; user-select:none;
+    }
+    .location-btn:active { transform:scale(.97); }
+    .location-btn.obtained { background:linear-gradient(45deg,#00c853,#00e676); }
+    .submit-btn {
+      width:100%; padding:16px; background:linear-gradient(45deg,#ff006e,#ff4d94); border:none; border-radius:12px; color:#fff;
+      font-size:17px; font-weight:700; cursor:pointer; margin-top:20px; margin-bottom:30px; transition:.2s; -webkit-user-select:none; user-select:none;
+    }
+    .submit-btn:active { transform:scale(.97); }
+    .submit-btn:disabled { opacity:.5; cursor:not-allowed; }
+    input[type="file"] { display:none; }
+  </style>
+</head>
+<body>
+  <div class="lang-switch">
+    <button type="button" class="lang-btn" id="ru-btn">RU</button>
+    <button type="button" class="lang-btn active" id="kz-btn">KZ</button>
+  </div>
+
+  <div class="container">
+    <div class="header">
+      <div class="brand">AIKA</div>
+      <div class="subtitle" id="subtitle">Профиліңізді жасаңыз</div>
+    </div>
+
+    <form id="registerForm" novalidate>
+      <div class="avatar-upload">
+        <div class="avatar-preview" id="avatarPreview">
+          <div class="avatar-placeholder">📸</div>
+        </div>
+        <div class="avatar-buttons">
+          <button type="button" class="avatar-btn" id="uploadBtn"><span>📁</span><span id="uploadText">Жүктеу</span></button>
+          <button type="button" class="avatar-btn" id="photoBtn"><span>📷</span><span id="photoText">Сурет</span></button>
+        </div>
+        <input type="file" id="fileInput" accept="image/*" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" id="nicknameLabel">Никнейм</label>
+        <input type="text" class="form-input" id="nickname" placeholder="Никнеймді енгізіңіз" required />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" id="sexLabel">Жынысы</label>
+        <div class="sex-select">
+          <div class="sex-option" id="maleOption">
+            <div style="font-size:30px;">👨</div>
+            <div id="maleText" style="font-size:14px;margin-top:4px;">Ер адам</div>
+          </div>
+          <div class="sex-option" id="femaleOption">
+            <div style="font-size:30px;">👩</div>
+            <div id="femaleText" style="font-size:14px;margin-top:4px;">Әйел адам</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" id="ageLabel">Жасы</label>
+        <input type="number" class="form-input" id="age" placeholder="18" min="18" max="100" required />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" id="locationLabel">Геолокация</label>
+        <button type="button" class="location-btn" id="locationBtn">
+          <span>📍</span><span id="locationText">Орналасқан жерді бөлісу</span>
+        </button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" id="aboutLabel">Өзім туралы</label>
+        <textarea class="form-input form-textarea" id="about" placeholder="Өзіңіз туралы және не іздеп жатқаныңызды айтыңыз..." required></textarea>
+      </div>
+
+      <button type="submit" class="submit-btn" id="submitBtn"><span id="submitText">Профиль жасау</span></button>
+    </form>
+  </div>
+
+  <script>
+    // ---------- i18n ----------
+    const translations = {
+      ru: {
+        subtitle: 'Создайте свой профиль',
+        upload: 'Загрузить',
+        photo: 'Фото',
+        nickname: 'Никнейм',
+        nicknamePlaceholder: 'Введите ваш никнейм',
+        sex: 'Пол',
+        male: 'Мужчина',
+        female: 'Женщина',
+        age: 'Возраст',
+        location: 'Геолокация',
+        locationBtn: 'Поделиться местоположением',
+        locationObtained: 'Местоположение получено ✓',
+        about: 'О себе',
+        aboutPlaceholder: 'Расскажите о себе и что вы ищете...',
+        submit: 'Создать профиль',
+        geoGetting: '⏳ Получение...',
+        geoError: 'Ошибка геолокации',
+        nickErr: 'Введите никнейм',
+        sexErr: 'Выберите пол',
+        ageErr: 'Введите возраст (мин. 18)',
+        shareErr: 'Поделитесь местоположением',
+        aboutErr: 'Расскажите о себе',
+        making: '⏳ Создание...',
+        made: 'Профиль создан!',
+        error: 'Ошибка'
+      },
+      kz: {
+        subtitle: 'Профиліңізді жасаңыз',
+        upload: 'Жүктеу',
+        photo: 'Сурет',
+        nickname: 'Никнейм',
+        nicknamePlaceholder: 'Никнеймді енгізіңіз',
+        sex: 'Жынысы',
+        male: 'Ер адам',
+        female: 'Әйел адам',
+        age: 'Жасы',
+        location: 'Геолокация',
+        locationBtn: 'Орналасқан жерді бөлісу',
+        locationObtained: 'Орналасқан жер алынды ✓',
+        about: 'Өзім туралы',
+        aboutPlaceholder: 'Өзіңіз туралы және не іздеп жатқаныңызды айтыңыз...',
+        submit: 'Профиль жасау',
+        geoGetting: '⏳ Алынуда...',
+        geoError: 'Геолокация қатесі',
+        nickErr: 'Никнеймді енгізіңіз',
+        sexErr: 'Жынысты таңдаңыз',
+        ageErr: 'Жасты енгізіңіз (мін. 18)',
+        shareErr: 'Геолокацияны бөлісіңіз',
+        aboutErr: 'Өзіңіз туралы жазыңыз',
+        making: '⏳ Жасалуда...',
+        made: 'Профиль жасалды!',
+        error: 'Қате'
+      }
+    };
+
+    let currentLang = 'kz';
+    let selectedSex = '';
+    let avatarFile = null;
+    let geo = null;
+
+    // ---------- Telegram init ----------
+    const tg = window.Telegram?.WebApp || {};
+    const isInTelegram = !!window.Telegram?.WebApp?.initData;
+    if (isInTelegram) {
+      try {
+        tg.ready();
+        tg.expand?.();
+        tg.enableClosingConfirmation?.();
+      } catch (_) {}
+    } else {
+      // TEST MODE
+      console.warn('TEST MODE');
+      tg.initDataUnsafe = { user: { id: 123456789, first_name: 'Test', username: 'testuser' } };
+    }
+
+    // ---------- Helpers ----------
+    const $ = (id) => document.getElementById(id);
+    const setText = (id, text) => { const el = $(id); if (el) el.textContent = text; };
+
+    function switchLang(lang) {
+      currentLang = lang;
+      $('ru-btn').classList.toggle('active', lang === 'ru');
+      $('kz-btn').classList.toggle('active', lang === 'kz');
+
+      const t = translations[lang];
+      setText('subtitle', t.subtitle);
+      setText('uploadText', t.upload);
+      setText('photoText', t.photo);
+      setText('nicknameLabel', t.nickname);
+      $('nickname').placeholder = t.nicknamePlaceholder;
+      setText('sexLabel', t.sex);
+      setText('maleText', t.male);
+      setText('femaleText', t.female);
+      setText('ageLabel', t.age);
+      setText('locationLabel', t.location);
+      setText('aboutLabel', t.about);
+      $('about').placeholder = t.aboutPlaceholder;
+      setText('submitText', t.submit);
+      if (!geo) setText('locationText', t.locationBtn);
+    }
+
+    function bindUI() {
+      // Language
+      $('ru-btn')?.addEventListener('click', (e) => { e.preventDefault(); switchLang('ru'); }, { passive:false });
+      $('kz-btn')?.addEventListener('click', (e) => { e.preventDefault(); switchLang('kz'); }, { passive:false });
+
+      // Sex
+      $('maleOption')?.addEventListener('click', (e) => {
+        e.preventDefault(); selectedSex = 'male';
+        $('maleOption').classList.add('selected'); $('femaleOption').classList.remove('selected');
+      }, { passive:false });
+
+      $('femaleOption')?.addEventListener('click', (e) => {
+        e.preventDefault(); selectedSex = 'female';
+        $('femaleOption').classList.add('selected'); $('maleOption').classList.remove('selected');
+      }, { passive:false });
+
+      // Avatar: file upload
+      $('uploadBtn')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const input = $('fileInput');
+        input.removeAttribute('capture');
+        input.setAttribute('accept', 'image/*');
+        input.click();
+      }, { passive:false });
+
+      // Avatar: camera
+      $('photoBtn')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const input = $('fileInput');
+        // iOS/WebView prefers accept with capture hint
+        input.setAttribute('accept', 'image/*;capture=camera');
+        input.setAttribute('capture', 'environment');
+        input.click();
+      }, { passive:false });
+
+      // File change
+      $('fileInput')?.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        avatarFile = file;
+        const reader = new FileReader();
+        reader.onload = (ev) => { $('avatarPreview').innerHTML = `<img src="${ev.target.result}" alt="Avatar">`; };
+        reader.readAsDataURL(file);
+      });
+
+      // Geolocation
+      $('locationBtn')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await obtainGeolocation();
+      }, { passive:false });
+
+      // Submit
+      $('registerForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await handleSubmit();
+      });
+    }
+
+    // ---------- Geolocation via Yandex Maps JS API v3 ----------
+    async function obtainGeolocation() {
+      const t = translations[currentLang];
+      const btn = $('locationBtn'); const txt = $('locationText');
+      txt.textContent = t.geoGetting;
+
+      // Ensure script ready
+      try {
+        if (!window.ymaps3 || !ymaps3.ready) throw new Error('ymaps3 not loaded');
+        await ymaps3.ready;
+
+        // Try Yandex API v3
+        if (ymaps3?.geolocation?.getPosition) {
+          const pos = await ymaps3.geolocation.getPosition();
+          // Yandex v3 returns coords as [lon, lat]
+          const [lon, lat] = pos.coords || [];
+          if (typeof lat === 'number' && typeof lon === 'number') {
+            geo = { latitude: lat, longitude: lon, accuracy: pos.accuracy ?? null, provider: 'yandex' };
+          }
+        }
+
+        // Fallback to HTML5 if needed
+        if (!geo?.latitude) {
+          await new Promise((resolve, reject) => {
+            if (!navigator.geolocation) return reject(new Error('No Geolocation API'));
+            navigator.geolocation.getCurrentPosition(
+              (g) => {
+                geo = {
+                  latitude: g.coords.latitude,
+                  longitude: g.coords.longitude,
+                  accuracy: g.coords.accuracy ?? null,
+                  provider: 'browser'
+                };
+                resolve();
+              },
+              (err) => reject(err),
+              { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            );
+          });
+        }
+
+        if (geo?.latitude) {
+          btn.classList.add('obtained');
+          txt.textContent = t.locationObtained;
+          return;
+        }
+        throw new Error('No coordinates');
+      } catch (err) {
+        console.error('GEO ERROR:', err);
+        alert(t.geoError);
+        txt.textContent = translations[currentLang].locationBtn;
+      }
+    }
+
+    // ---------- Submit ----------
+    async function handleSubmit() {
+      const t = translations[currentLang];
+      const nickname = $('nickname').value.trim();
+      const age = +$('age').value;
+      const about = $('about').value.trim();
+
+      if (!nickname) return alert(t.nickErr);
+      if (!selectedSex) return alert(t.sexErr);
+      if (!age || age < 18) return alert(t.ageErr);
+      if (!geo) return alert(t.shareErr);
+      if (!about) return alert(t.aboutErr);
+
+      const btn = $('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = `<span>${t.making}</span>`;
+
+      try {
+        const user = tg.initDataUnsafe?.user;
+        if (!user?.id) throw new Error('Telegram user not found');
+
+        const fd = new FormData();
+        fd.append('telegram_id', String(user.id));
+        fd.append('nickname', nickname);
+        fd.append('sex', selectedSex);
+        fd.append('age', String(age));
+        fd.append('latitude', String(geo.latitude));
+        fd.append('longitude', String(geo.longitude));
+        fd.append('about_user', about);
+        if (avatarFile) fd.append('avatar', avatarFile);
+
+        const res = await fetch('/api/user/register', { method: 'POST', body: fd });
+        let data = {};
+        try { data = await res.json(); } catch (_) {}
+        if (res.ok && (data?.success ?? true)) {
+          alert(t.made);
+          // Если есть список — переходим
+          location.href = '/list.html';
+        } else {
+          throw new Error(data?.error || t.error);
+        }
+      } catch (err) {
+        console.error('SUBMIT ERROR:', err);
+        alert(err.message || translations[currentLang].error);
+        btn.disabled = false;
+        btn.innerHTML = `<span>${translations[currentLang].submit}</span>`;
+      }
+    }
+
+    // ---------- Boot ----------
+    (function boot() {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => { bindUI(); switchLang('kz'); });
+      } else {
+        bindUI(); switchLang('kz');
+      }
+    })();
+  </script>
+</body>
+</html>
