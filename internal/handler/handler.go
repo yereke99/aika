@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -18,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -47,6 +49,7 @@ func (h *Handler) DefaultHandler(ctx context.Context, b *bot.Bot, update *models
 	if update.Message == nil {
 		return
 	}
+
 	h.logger.Info("Received message",
 		zap.String("text", update.Message.Text),
 		zap.Int64("chatID", update.Message.Chat.ID),
@@ -76,6 +79,10 @@ func (h *Handler) StartWebServer(ctx context.Context, b *bot.Bot) {
 	mux.HandleFunc("/api/users/nearby", h.GetNearbyUsersHandler)
 	mux.HandleFunc("/api/users/", h.GetUserByIDHandler) // /api/users/{id}
 
+	// Like and message
+	mux.HandleFunc("/api/user/like", h.LikeHandler)
+	mux.HandleFunc("/api/user/message", h.MessageHandler)
+
 	handler := h.corsMiddleware(mux)
 
 	addr := fmt.Sprintf(":%s", h.cfg.Port)
@@ -103,7 +110,7 @@ func (h *Handler) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Telegram-Id")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -159,6 +166,293 @@ type CheckUserRequest struct {
 type CheckUserResponse struct {
 	Exists bool   `json:"exists"`
 	UserId string `json:"user_id,omitempty"`
+}
+
+// ====== Ключи для контекста, чтобы не менять сигнатуры sendLike/sendMessage
+type ctxKey string
+
+const (
+	ctxLikeFromKey ctxKey = "aika_like_from"
+	ctxMsgFromKey  ctxKey = "aika_msg_from"
+	ctxMsgTextKey  ctxKey = "aika_msg_text"
+)
+
+// ====== Утилита: достать TG ID из контекста/заголовка
+func currentTGID(r *http.Request) (int64, error) {
+	// если где-то ранее клали tg_id в контекст — можно добавить сюда
+	if v := r.Context().Value("tg_id"); v != nil {
+		if id, ok := v.(int64); ok && id > 0 {
+			return id, nil
+		}
+	}
+	// простой мост: с фронта передаём X-Telegram-Id
+	if h := r.Header.Get("X-Telegram-Id"); h != "" {
+		var id int64
+		_, err := fmt.Sscanf(h, "%d", &id)
+		if err == nil && id > 0 {
+			return id, nil
+		}
+	}
+	return 0, errors.New("unauthorized: telegram id is missing")
+}
+
+// ====== Вспомогательные билдеры текста
+func sexKZ(sex string) string {
+	switch strings.ToLower(strings.TrimSpace(sex)) {
+	case "male", "ер", "m":
+		return "Ер адам"
+	case "female", "әйел", "f":
+		return "Әйел адам"
+	default:
+		return "—"
+	}
+}
+func sexEmoji(sex string) string {
+	switch strings.ToLower(strings.TrimSpace(sex)) {
+	case "male", "m", "ер":
+		return "👨"
+	case "female", "f", "ж":
+		return "👩"
+	default:
+		return "🙂"
+	}
+}
+func safeNickKZ(nick string) string {
+	n := strings.TrimSpace(nick)
+	if n == "" {
+		return "досым"
+	}
+	return n
+}
+
+// ---------- API: LIKE ----------
+type likeAPIRequest struct {
+	ToUserID string `json:"to_user_id"` // DB user ID (uuid/text)
+}
+type likeAPIResponse struct {
+	OK        bool   `json:"ok"`
+	Message   string `json:"message,omitempty"`
+	Delivered bool   `json:"delivered"`
+}
+
+func (h *Handler) LikeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.writeJSON(w, http.StatusMethodNotAllowed, likeAPIResponse{OK: false, Message: "method not allowed"})
+		return
+	}
+
+	var req likeAPIRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.ToUserID) == "" {
+		h.writeJSON(w, http.StatusBadRequest, likeAPIResponse{OK: false, Message: "invalid body"})
+		return
+	}
+
+	fromTG, err := currentTGID(r)
+	if err != nil {
+		h.writeJSON(w, http.StatusUnauthorized, likeAPIResponse{OK: false, Message: "unauthorized"})
+		return
+	}
+
+	fromUser, err := h.userRepo.GetUserByTelegramId(fromTG)
+	if err != nil || fromUser == nil {
+		h.logger.Error("like: sender not found", zap.Int64("fromTG", fromTG), zap.Error(err))
+		h.writeJSON(w, http.StatusBadRequest, likeAPIResponse{OK: false, Message: "sender not found"})
+		return
+	}
+
+	toUser, err := h.userRepo.GetUserByID(req.ToUserID)
+	if err != nil || toUser == nil {
+		h.logger.Error("like: recipient not found", zap.String("toUserID", req.ToUserID), zap.Error(err))
+		h.writeJSON(w, http.StatusBadRequest, likeAPIResponse{OK: false, Message: "recipient not found"})
+		return
+	}
+	if toUser.TelegramId == 0 {
+		h.writeJSON(w, http.StatusBadRequest, likeAPIResponse{OK: false, Message: "recipient has no telegram"})
+		return
+	}
+	if toUser.TelegramId == fromUser.TelegramId {
+		h.writeJSON(w, http.StatusBadRequest, likeAPIResponse{OK: false, Message: "cannot like yourself"})
+		return
+	}
+	if h.bot == nil {
+		h.logger.Error("like: telegram bot is nil; cannot send")
+		h.writeJSON(w, http.StatusInternalServerError, likeAPIResponse{OK: false, Message: "bot unavailable"})
+		return
+	}
+
+	// Optional: persist like (idempotent)
+	// _ = h.userRepo.UpsertLike(fromUser.Id, toUser.Id)
+
+	// Fire-and-log; we’ll not block the response on Telegram’s roundtrip.
+	go func(from *domain.User, to *domain.User) {
+		if ok := h.sendLike(context.Background(), h.bot, from, to); !ok {
+			h.logger.Warn("like: delivery failed",
+				zap.Int64("fromTG", from.TelegramId),
+				zap.Int64("toTG", to.TelegramId),
+				zap.String("toUserDBID", to.Id),
+			)
+		}
+	}(fromUser, toUser)
+
+	h.writeJSON(w, http.StatusOK, likeAPIResponse{OK: true, Message: "liked", Delivered: true})
+}
+
+// sendLike now takes both users explicitly and returns whether delivery happened
+func (h *Handler) sendLike(ctx context.Context, b *bot.Bot, from *domain.User, to *domain.User) bool {
+	if b == nil || from == nil || to == nil || to.TelegramId == 0 {
+		return false
+	}
+
+	nick := safeNickKZ(from.Nickname)
+	ageText := "—"
+	if from.Age > 0 {
+		ageText = fmt.Sprintf("%d жаста", from.Age)
+	}
+	about := strings.TrimSpace(from.AboutUser)
+	if about == "" {
+		about = "—"
+	}
+	const aboutLimit = 300
+	if utf8.RuneCountInString(about) > aboutLimit {
+		r := []rune(about)
+		about = string(r[:aboutLimit]) + "…"
+	}
+
+	caption := fmt.Sprintf(
+		"❤️ Сізге лайк қойды!\n\n%s\nЖынысы: %s\nЖасы: %s\n\nӨзім туралы: %s",
+		sexEmoji(from.Sex)+" "+nick,
+		sexKZ(from.Sex),
+		ageText,
+		about,
+	)
+
+	// 1) Try photo with its own timeout
+	if p := strings.TrimSpace(from.AvatarPath); p != "" {
+		if f, err := os.Open(p); err != nil {
+			h.logger.Warn("like: open avatar failed", zap.String("path", p), zap.Error(err))
+		} else {
+			defer f.Close()
+			ctxPhoto, cancel := context.WithTimeout(ctx, 20*time.Second)
+			defer cancel()
+			_, err := b.SendPhoto(ctxPhoto, &bot.SendPhotoParams{
+				ChatID: to.TelegramId,
+				Photo: &models.InputFileUpload{
+					Filename: filepath.Base(p),
+					Data:     f,
+				},
+				Caption:        caption,
+				ProtectContent: true,
+			})
+			if err == nil {
+				return true
+			}
+			h.logger.Error("like: sendPhoto failed", zap.Error(err))
+		}
+	}
+
+	// 2) Fallback: plain text with a fresh timeout
+	ctxMsg, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	_, err := b.SendMessage(ctxMsg, &bot.SendMessageParams{
+		ChatID:         to.TelegramId,
+		Text:           caption,
+		ProtectContent: true,
+	})
+	if err != nil {
+		h.logger.Error("like: sendMessage failed", zap.Error(err))
+		return false
+	}
+	return true
+}
+
+// ---------- API: MESSAGE ----------
+type messageAPIRequest struct {
+	ToUserID string `json:"to_user_id"`
+	Text     string `json:"text"`
+}
+
+// generic API response used by several handlers (message, etc.)
+type genericAPIResponse struct {
+	OK      bool   `json:"ok"`
+	Message string `json:"message,omitempty"`
+}
+
+func (h *Handler) MessageHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.writeJSON(w, http.StatusMethodNotAllowed, genericAPIResponse{OK: false, Message: "method not allowed"})
+		return
+	}
+	var req messageAPIRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.ToUserID) == "" {
+		h.writeJSON(w, http.StatusBadRequest, genericAPIResponse{OK: false, Message: "invalid body"})
+		return
+	}
+	req.Text = strings.TrimSpace(req.Text)
+	if req.Text == "" {
+		h.writeJSON(w, http.StatusBadRequest, genericAPIResponse{OK: false, Message: "empty message"})
+		return
+	}
+
+	fromTG, err := currentTGID(r)
+	if err != nil {
+		h.writeJSON(w, http.StatusUnauthorized, genericAPIResponse{OK: false, Message: "unauthorized"})
+		return
+	}
+
+	fromUser, err := h.userRepo.GetUserByTelegramId(fromTG)
+	if err != nil || fromUser == nil {
+		h.logger.Error("sender not found", zap.Error(err))
+		h.writeJSON(w, http.StatusBadRequest, genericAPIResponse{OK: false, Message: "sender not found"})
+		return
+	}
+	toUser, err := h.userRepo.GetUserByID(req.ToUserID)
+	if err != nil || toUser == nil {
+		h.logger.Error("recipient not found", zap.Error(err))
+		h.writeJSON(w, http.StatusBadRequest, genericAPIResponse{OK: false, Message: "recipient not found"})
+		return
+	}
+	if toUser.TelegramId == 0 {
+		h.writeJSON(w, http.StatusBadRequest, genericAPIResponse{OK: false, Message: "recipient has no telegram"})
+		return
+	}
+
+	// Можно сохранить в БД (если есть метод репозитория).
+	// _ = h.userRepo.InsertMessage(fromUser.Id, toUser.Id, req.Text)
+
+	// Передаём данные в контекст → шаблонная функция
+	bg := context.WithValue(context.Background(), ctxMsgFromKey, fromUser)
+	bg = context.WithValue(bg, ctxMsgTextKey, req.Text)
+	ctxSend, cancel := context.WithTimeout(bg, 15*time.Second)
+	go func() {
+		defer cancel()
+		h.sendMessage(ctxSend, h.bot, toUser)
+	}()
+
+	h.writeJSON(w, http.StatusOK, genericAPIResponse{OK: true, Message: "sent"})
+}
+
+// Реализация шаблонной функции: отправка сообщения с подписью, кто пишет
+func (h *Handler) sendMessage(ctx context.Context, b *bot.Bot, user *domain.User) {
+	if b == nil || user == nil || user.TelegramId == 0 {
+		return
+	}
+	fromUser, _ := ctx.Value(ctxMsgFromKey).(*domain.User)
+	text, _ := ctx.Value(ctxMsgTextKey).(string)
+	if fromUser == nil || strings.TrimSpace(text) == "" {
+		return
+	}
+
+	nick := safeNickKZ(fromUser.Nickname)
+	header := fmt.Sprintf("💬 Жаңа хабарлама %s:", nick)
+	out := header + "\n\n" + text
+
+	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:         user.TelegramId,
+		Text:           out,
+		ProtectContent: true,
+	}); err != nil {
+		h.logger.Error("send message failed", zap.Error(err))
+	}
 }
 
 func (h *Handler) CheckUserHandler(w http.ResponseWriter, r *http.Request) {
@@ -269,7 +563,112 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, http.StatusInternalServerError, RegisterResponse{Success: false, Error: "Failed to register user"})
 		return
 	}
+
+	go h.sendConfirmationMessageToRegister(r.Context(), h.bot, user)
+
 	h.writeJSON(w, http.StatusOK, RegisterResponse{Success: true, Message: "User registered successfully", UserId: userId})
+}
+
+func (h *Handler) sendConfirmationMessageToRegister(ctx context.Context, b *bot.Bot, user *domain.User) {
+	if user == nil {
+		return
+	}
+
+	safeNickKZ := func(nick string) string {
+		n := strings.TrimSpace(nick)
+		if n == "" {
+			return "досым"
+		}
+		return n
+	}
+	sexKZ := func(sex string) string {
+		switch strings.ToLower(strings.TrimSpace(sex)) {
+		case "male", "ер", "m":
+			return "Ер адам"
+		case "female", "әйел", "f":
+			return "Әйел адам"
+		default:
+			return "—"
+		}
+	}
+	yesNoKZ := func(ok bool, yes, no string) string {
+		if ok {
+			return yes
+		}
+		return no
+	}
+
+	nick := safeNickKZ(user.Nickname)
+	ageText := "—"
+	if user.Age > 0 {
+		ageText = fmt.Sprintf("%d", user.Age)
+	}
+	geoOK := (user.Latitude != nil && user.Longitude != nil)
+	about := strings.TrimSpace(user.AboutUser)
+	if about == "" {
+		about = "—"
+	}
+
+	const aboutLimit = 300
+	if utf8.RuneCountInString(about) > aboutLimit {
+		r := []rune(about)
+		about = string(r[:aboutLimit]) + "…"
+	}
+
+	details := fmt.Sprintf(
+		"• Атыңыз (ник): %s\n"+
+			"• Жасы: %s\n"+
+			"• Жынысы: %s\n"+
+			"• Геолокация: %s\n"+
+			"• Фото: %s\n"+
+			"• Telegram ID: %d\n"+
+			"• Өзім туралы: %s",
+		nick,
+		ageText,
+		sexKZ(user.Sex),
+		yesNoKZ(geoOK, "✅ сақталды", "—"),
+		yesNoKZ(user.AvatarPath != "", "✅ жүктелді", "—"),
+		user.TelegramId,
+		about,
+	)
+
+	caption := fmt.Sprintf(
+		"🎉 Тіркеу сәтті өтті, %s!\n\n"+
+			"%s\n\n"+
+			"AIKA-ға қош келдіңіз! Енді жаныңыздағы адамдарды қарап, ұнағанына ❤️ басып, бірден сөйлесе аласыз. 👋💬\n\n"+
+			"Жаңа таныстықтар мен жақсы әңгімелер тілейміз! ✨",
+		nick, details,
+	)
+
+	if user.AvatarPath != "" {
+		file, err := os.Open(user.AvatarPath)
+		if err != nil {
+			h.logger.Error("open profile photo failed", zap.Error(err))
+		} else {
+			defer file.Close()
+			if _, err := b.SendPhoto(ctx, &bot.SendPhotoParams{
+				ChatID: user.TelegramId,
+				Photo: &models.InputFileUpload{
+					Filename: filepath.Base(user.AvatarPath),
+					Data:     file,
+				},
+				Caption:        caption,
+				ProtectContent: true,
+			}); err == nil {
+				return
+			} else {
+				h.logger.Error("send photo confirmation failed", zap.Error(err))
+			}
+		}
+	}
+
+	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:         user.TelegramId,
+		Text:           caption,
+		ProtectContent: true,
+	}); err != nil {
+		h.logger.Error("send text confirmation failed", zap.Error(err))
+	}
 }
 
 // ----- Update profile (multipart form)
@@ -553,7 +952,6 @@ func (h *Handler) GetNearbyUsersHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 // ---------- Helpers
-
 func parseFloatParam(q url.Values, key string) (*float64, error) {
 	s := q.Get(key)
 	if s == "" {
