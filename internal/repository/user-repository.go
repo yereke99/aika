@@ -145,6 +145,17 @@ func (r *UserRepository) FindUsersByFilters(sex string, ageMin, ageMax *int, q s
 	return res, rows.Err()
 }
 
+// GetUserNickname возвращает user_nickname для данного user_id.
+func (r *UserRepository) GetUserNickname(userID int64) (string, error) {
+	query := `SELECT nickname FROM users WHERE user_id = ?`
+	var nickname string
+	if err := r.db.QueryRow(query, userID).Scan(&nickname); err != nil {
+		// Если записи не найдено, можно вернуть пустую строку или ошибку
+		return "", fmt.Errorf("GetUserNickname қатесі: %w", err)
+	}
+	return nickname, nil
+}
+
 // Кандидаты по bbox + фильтры
 func (r *UserRepository) FindUsersInBBox(latMin, latMax, lonMin, lonMax float64, sex string, ageMin, ageMax *int, q string, limit int) ([]domain.User, error) {
 	query := `

@@ -5,9 +5,10 @@ import (
 )
 
 type Config struct {
-	Token  string
-	Port   string
-	DBPath string
+	Token       string
+	Port        string
+	DBPath      string
+	ChannelName string
 }
 
 func NewConfig() (*Config, error) {
@@ -27,8 +28,9 @@ func NewConfig() (*Config, error) {
 	}
 
 	return &Config{
-		Token:  token,
-		Port:   port,
-		DBPath: dbPath,
+		Token:       token,
+		Port:        port,
+		DBPath:      dbPath,
+		ChannelName: "@jaiAngmeAitamyz",
 	}, nil
 }

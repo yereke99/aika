@@ -3,6 +3,7 @@ package handler
 import (
 	"aika/config"
 	"aika/internal/domain"
+	"aika/internal/keyboard"
 	"aika/internal/repository"
 	"context"
 	"database/sql"
@@ -26,20 +27,41 @@ import (
 	"go.uber.org/zap"
 )
 
-type Handler struct {
-	logger   *zap.Logger
-	cfg      *config.Config
-	bot      *bot.Bot
-	ctx      context.Context
-	userRepo *repository.UserRepository
+// ---------- API: MESSAGE ----------
+type messageAPIRequest struct {
+	ToUserID string `json:"to_user_id"`
+	Text     string `json:"text"`
 }
 
-func NewHandler(logger *zap.Logger, cfg *config.Config, ctx context.Context, db *sql.DB) *Handler {
+// generic API response used by several handlers (message, etc.)
+type genericAPIResponse struct {
+	OK      bool   `json:"ok"`
+	Message string `json:"message,omitempty"`
+}
+
+type RegisterResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
+	UserId  string `json:"user_id,omitempty"`
+}
+
+type Handler struct {
+	logger      *zap.Logger
+	cfg         *config.Config
+	bot         *bot.Bot
+	ctx         context.Context
+	userRepo    *repository.UserRepository
+	redisClient *repository.ChatRepository
+}
+
+func NewHandler(logger *zap.Logger, cfg *config.Config, ctx context.Context, db *sql.DB, redisClient *repository.ChatRepository) *Handler {
 	return &Handler{
-		logger:   logger,
-		cfg:      cfg,
-		ctx:      ctx,
-		userRepo: repository.NewUserRepository(db),
+		logger:      logger,
+		cfg:         cfg,
+		ctx:         ctx,
+		userRepo:    repository.NewUserRepository(db),
+		redisClient: redisClient,
 	}
 }
 
@@ -49,6 +71,8 @@ func (h *Handler) DefaultHandler(ctx context.Context, b *bot.Bot, update *models
 	if update.Message == nil {
 		return
 	}
+
+	h.HandleChat(ctx, b, update)
 
 	h.logger.Info("Received message",
 		zap.String("text", update.Message.Text),
@@ -179,17 +203,15 @@ const (
 
 // ====== Утилита: достать TG ID из контекста/заголовка
 func currentTGID(r *http.Request) (int64, error) {
-	// если где-то ранее клали tg_id в контекст — можно добавить сюда
 	if v := r.Context().Value("tg_id"); v != nil {
 		if id, ok := v.(int64); ok && id > 0 {
 			return id, nil
 		}
 	}
-	// простой мост: с фронта передаём X-Telegram-Id
 	if h := r.Header.Get("X-Telegram-Id"); h != "" {
 		var id int64
 		_, err := fmt.Sscanf(h, "%d", &id)
-		if err == nil && id > 0 {
+		if err == nil {
 			return id, nil
 		}
 	}
@@ -252,14 +274,12 @@ func (h *Handler) LikeHandler(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, http.StatusUnauthorized, likeAPIResponse{OK: false, Message: "unauthorized"})
 		return
 	}
-
 	fromUser, err := h.userRepo.GetUserByTelegramId(fromTG)
 	if err != nil || fromUser == nil {
 		h.logger.Error("like: sender not found", zap.Int64("fromTG", fromTG), zap.Error(err))
 		h.writeJSON(w, http.StatusBadRequest, likeAPIResponse{OK: false, Message: "sender not found"})
 		return
 	}
-
 	toUser, err := h.userRepo.GetUserByID(req.ToUserID)
 	if err != nil || toUser == nil {
 		h.logger.Error("like: recipient not found", zap.String("toUserID", req.ToUserID), zap.Error(err))
@@ -280,10 +300,6 @@ func (h *Handler) LikeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optional: persist like (idempotent)
-	// _ = h.userRepo.UpsertLike(fromUser.Id, toUser.Id)
-
-	// Fire-and-log; we’ll not block the response on Telegram’s roundtrip.
 	go func(from *domain.User, to *domain.User) {
 		if ok := h.sendLike(context.Background(), h.bot, from, to); !ok {
 			h.logger.Warn("like: delivery failed",
@@ -293,7 +309,6 @@ func (h *Handler) LikeHandler(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 	}(fromUser, toUser)
-
 	h.writeJSON(w, http.StatusOK, likeAPIResponse{OK: true, Message: "liked", Delivered: true})
 }
 
@@ -319,14 +334,13 @@ func (h *Handler) sendLike(ctx context.Context, b *bot.Bot, from *domain.User, t
 	}
 
 	caption := fmt.Sprintf(
-		"❤️ Сізге лайк қойды!\n\n%s\nЖынысы: %s\nЖасы: %s\n\nӨзім туралы: %s",
+		"❤️ Сізге лайк қойды!\n\n%s\nЖынысы: %s\nЖасы: %s\n\nӨзі туралы: %s",
 		sexEmoji(from.Sex)+" "+nick,
 		sexKZ(from.Sex),
 		ageText,
 		about,
 	)
 
-	// 1) Try photo with its own timeout
 	if p := strings.TrimSpace(from.AvatarPath); p != "" {
 		if f, err := os.Open(p); err != nil {
 			h.logger.Warn("like: open avatar failed", zap.String("path", p), zap.Error(err))
@@ -334,13 +348,13 @@ func (h *Handler) sendLike(ctx context.Context, b *bot.Bot, from *domain.User, t
 			defer f.Close()
 			ctxPhoto, cancel := context.WithTimeout(ctx, 20*time.Second)
 			defer cancel()
+			kb := keyboard.NewKeyboard()
+			kb.AddRow(keyboard.NewInlineButton("💬 Сөйлесуді бастау", fmt.Sprintf("select_%d", from.TelegramId)))
 			_, err := b.SendPhoto(ctxPhoto, &bot.SendPhotoParams{
-				ChatID: to.TelegramId,
-				Photo: &models.InputFileUpload{
-					Filename: filepath.Base(p),
-					Data:     f,
-				},
-				Caption:        caption,
+				ChatID:         to.TelegramId,
+				Photo:          &models.InputFileUpload{Data: f, Filename: filepath.Base(p)},
+				Caption:        caption,    // optional but good
+				ReplyMarkup:    kb.Build(), // <- no helper involved
 				ProtectContent: true,
 			})
 			if err == nil {
@@ -363,18 +377,6 @@ func (h *Handler) sendLike(ctx context.Context, b *bot.Bot, from *domain.User, t
 		return false
 	}
 	return true
-}
-
-// ---------- API: MESSAGE ----------
-type messageAPIRequest struct {
-	ToUserID string `json:"to_user_id"`
-	Text     string `json:"text"`
-}
-
-// generic API response used by several handlers (message, etc.)
-type genericAPIResponse struct {
-	OK      bool   `json:"ok"`
-	Message string `json:"message,omitempty"`
 }
 
 func (h *Handler) MessageHandler(w http.ResponseWriter, r *http.Request) {
@@ -481,13 +483,6 @@ func (h *Handler) CheckUserHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(CheckUserResponse{Exists: exists, UserId: userId})
-}
-
-type RegisterResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message,omitempty"`
-	Error   string `json:"error,omitempty"`
-	UserId  string `json:"user_id,omitempty"`
 }
 
 func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {

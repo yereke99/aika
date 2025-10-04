@@ -3,6 +3,7 @@ package main
 import (
 	"aika/config"
 	"aika/internal/handler"
+	"aika/internal/repository"
 	"aika/traits/database"
 	"aika/traits/logger"
 	"context"
@@ -35,8 +36,19 @@ func main() {
 	defer db.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	handl := handler.NewHandler(zapLogger, cfg, ctx, db)
+	redisClient, err := database.ConnectRedis(ctx, zapLogger)
+	if err != nil {
+		zapLogger.Fatal("error conn to redis", zap.Error(err))
+	}
+
+	redisRepo := repository.NewRedisClient(redisClient)
+
+	handl := handler.NewHandler(zapLogger, cfg, ctx, db, redisRepo)
 	opts := []bot.Option{
+		bot.WithAllowedUpdates([]string{"message", "callback_query"}), // <— add this
+		bot.WithCallbackQueryDataHandler("select_", bot.MatchTypePrefix, handl.InlineHandler),
+		bot.WithCallbackQueryDataHandler("exit", bot.MatchTypePrefix, handl.CallbackHandlerExit),
+		bot.WithCallbackQueryDataHandler("delete_", bot.MatchTypePrefix, handl.DeleteMessageHandler),
 		bot.WithDefaultHandler(handl.DefaultHandler),
 	}
 
