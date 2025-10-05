@@ -46,6 +46,9 @@ func main() {
 	handl := handler.NewHandler(zapLogger, cfg, ctx, db, redisRepo)
 	opts := []bot.Option{
 		bot.WithAllowedUpdates([]string{"message", "callback_query"}), // <— add this
+		bot.WithMessageTextHandler("/admin", bot.MatchTypeExact, handl.AdminHandler),
+		bot.WithMessageTextHandler("📢 Хабарлама (Messages)", bot.MatchTypeExact, handl.AdminHandler),
+		bot.WithMessageTextHandler("❌ Жабу (Close)", bot.MatchTypeExact, handl.AdminHandler),
 		bot.WithCallbackQueryDataHandler("select_", bot.MatchTypePrefix, handl.InlineHandler),
 		bot.WithCallbackQueryDataHandler("exit", bot.MatchTypePrefix, handl.CallbackHandlerExit),
 		bot.WithCallbackQueryDataHandler("delete_", bot.MatchTypePrefix, handl.DeleteMessageHandler),

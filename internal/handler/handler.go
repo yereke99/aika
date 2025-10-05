@@ -74,6 +74,37 @@ func NewHandler(logger *zap.Logger, cfg *config.Config, ctx context.Context, db 
 	}
 }
 
+func (h *Handler) getOrCreateUserState(ctx context.Context, userID int64) *domain.UserState {
+	state, err := h.redisClient.GetUserState(ctx, userID)
+	if err != nil {
+		h.logger.Error("Redis error, using fallback state",
+			zap.Error(err),
+			zap.Int64("user_id", userID))
+
+		// Return a safe default state
+		return &domain.UserState{
+			State:  stateStart,
+			Count:  0,
+			IsPaid: false,
+		}
+	}
+
+	if state == nil {
+		state = &domain.UserState{
+			State:  stateStart,
+			Count:  0,
+			IsPaid: false,
+		}
+
+		// Try to save, but don't fail if Redis is down
+		if err := h.redisClient.SaveUserState(ctx, userID, state); err != nil {
+			h.logger.Warn("Failed to save state to Redis, continuing with in-memory state",
+				zap.Error(err))
+		}
+	}
+	return state
+}
+
 func (h *Handler) SetBot(b *bot.Bot) { h.bot = b }
 
 func (h *Handler) DefaultHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -81,8 +112,8 @@ func (h *Handler) DefaultHandler(ctx context.Context, b *bot.Bot, update *models
 		return
 	}
 
-    userId := update.Message.From.ID
-	
+	userId := update.Message.From.ID
+
 	ok, errE := h.userRepo.ExistsJust(ctx, userId)
 	if errE != nil {
 		h.logger.Error("Failed to check user", zap.Error(errE))
@@ -98,7 +129,10 @@ func (h *Handler) DefaultHandler(ctx context.Context, b *bot.Bot, update *models
 		}
 	}
 
+	userState := h.getOrCreateUserState(ctx, userId)
+
 	if update.CallbackQuery != nil {
+		switch userState.State {
 		case stateAdminPanel:
 			h.AdminHandler(ctx, b, update)
 		case stateBroadcast:
@@ -132,7 +166,7 @@ func (h *Handler) StartWebServer(ctx context.Context, b *bot.Bot) {
 	mux := http.NewServeMux()
 
 	// HTML pages
-	mux.HandleFunc("/logo", func(w http.ResponseWriter, r *http.Request){
+	mux.HandleFunc("/logo", func(w http.ResponseWriter, r *http.Request) {
 		path := "./static/logo.html"
 		http.ServeFile(w, r, path)
 	})

@@ -10,7 +10,6 @@ type JustEntry struct {
 	DateRegistered string `json:"dateRegistered" db:"dataRegistred"`
 }
 
-
 type User struct {
 	Id         string
 	TelegramId int64
@@ -25,3 +24,10 @@ type User struct {
 	UpdatedAt  time.Time
 }
 
+type UserState struct {
+	State         string `json:"state"`
+	BroadCastType string `json:"broadcast_type"`
+	Count         int    `json:"count"`
+	Contact       string `json:"contact"`
+	IsPaid        bool   `json:"is_paid"`
+}

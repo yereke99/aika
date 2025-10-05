@@ -10,6 +10,7 @@ type Config struct {
 	DBPath      string
 	ChannelName string
 	MiniAppURL  string
+	AdminID     int64
 }
 
 func NewConfig() (*Config, error) {
@@ -34,5 +35,6 @@ func NewConfig() (*Config, error) {
 		DBPath:      dbPath,
 		ChannelName: "@jaiAngmeAitamyz",
 		MiniAppURL:  "https://erek001.bnna.dev",
+		AdminID:     800703982,
 	}, nil
 }
