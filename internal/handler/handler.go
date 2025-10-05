@@ -74,6 +74,66 @@ func NewHandler(logger *zap.Logger, cfg *config.Config, ctx context.Context, db 
 	}
 }
 
+
+const pairLimitTTL = 3 * time.Hour
+
+func rlKey(kind string, from, to int64) string {
+	return fmt.Sprintf("rl:%s:%d:%d", kind, from, to)
+}
+
+type LimitStatus struct {
+	Blocked       bool  `json:"blocked"`
+	RetryAfterSec int64 `json:"retry_after_sec"`
+}
+
+func (h *Handler) hitPair(kind string, from, to int64) (allowed bool, left time.Duration, err error) {
+	return h.redisClient.HitOnce(h.ctx, rlKey(kind, from, to), pairLimitTTL)
+}
+
+func (h *Handler) pairStatus(kind string, from, to int64) (LimitStatus, error) {
+	d, err := h.redisClient.TTL(h.ctx, rlKey(kind, from, to))
+	if err != nil {
+		return LimitStatus{}, err
+	}
+	if d <= 0 {
+		return LimitStatus{Blocked: false, RetryAfterSec: 0}, nil
+	}
+	return LimitStatus{Blocked: true, RetryAfterSec: int64(d.Seconds())}, nil
+}
+
+
+func (h *Handler) LimitStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	to := strings.TrimSpace(r.URL.Query().Get("to_user_id"))
+	if to == "" {
+		http.Error(w, "to_user_id required", http.StatusBadRequest)
+		return
+	}
+	fromTG, err := currentTGID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	toUser, err := h.userRepo.GetUserByID(to)
+	if err != nil || toUser == nil || toUser.TelegramId == 0 {
+		http.Error(w, "recipient not found", http.StatusBadRequest)
+		return
+	}
+
+	likeSt, _ := h.pairStatus("like", fromTG, toUser.TelegramId)
+	msgSt, _ := h.pairStatus("msg", fromTG, toUser.TelegramId)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]LimitStatus{
+		"like":    likeSt,
+		"message": msgSt,
+	})
+}
+
+
 func (h *Handler) getOrCreateUserState(ctx context.Context, userID int64) *domain.UserState {
 	state, err := h.redisClient.GetUserState(ctx, userID)
 	if err != nil {
@@ -131,17 +191,6 @@ func (h *Handler) DefaultHandler(ctx context.Context, b *bot.Bot, update *models
 
 	userState := h.getOrCreateUserState(ctx, userId)
 
-	if update.CallbackQuery != nil {
-		switch userState.State {
-		case stateAdminPanel:
-			h.AdminHandler(ctx, b, update)
-		case stateBroadcast:
-			h.SendMessage(ctx, b, update)
-		default:
-			h.DefaultHandler(ctx, b, update)
-		}
-		return
-	}
 
 	switch userState.State {
 	case stateAdminPanel:
@@ -149,7 +198,6 @@ func (h *Handler) DefaultHandler(ctx context.Context, b *bot.Bot, update *models
 	case stateBroadcast:
 		h.SendMessage(ctx, b, update)
 	default:
-		h.DefaultHandler(ctx, b, update)
 	}
 
 	h.HandleChat(ctx, b, update)
@@ -181,6 +229,8 @@ func (h *Handler) StartWebServer(ctx context.Context, b *bot.Bot) {
 	mux.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
 
 	// API
+	mux.HandleFunc("/api/limit/status", h.LimitStatusHandler)
+
 	mux.HandleFunc("/api/user/check", h.CheckUserHandler)
 	mux.HandleFunc("/api/user/register", h.HandleRegister)
 	mux.HandleFunc("/api/user/update", h.UpdateUserHandler)
@@ -213,6 +263,30 @@ func (h *Handler) StartWebServer(ctx context.Context, b *bot.Bot) {
 		h.logger.Error("Web server error", zap.Error(err))
 	}
 }
+
+
+func humanDur(d time.Duration) string {
+	if d < 0 {
+		return "қазір"
+	}
+	sec := int(d.Seconds() + 0.5)
+	h := sec / 3600
+	m := (sec % 3600) / 60
+	s := sec % 60
+	switch {
+	case h > 0 && m > 0:
+		return fmt.Sprintf("%d сағ %d мин", h, m)
+	case h > 0:
+		return fmt.Sprintf("%d сағ", h)
+	case m > 0 && s > 0:
+		return fmt.Sprintf("%d мин %d сек", m, s)
+	case m > 0:
+		return fmt.Sprintf("%d мин", m)
+	default:
+		return fmt.Sprintf("%d сек", s)
+	}
+}
+
 
 func (h *Handler) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +414,7 @@ type likeAPIResponse struct {
 	Delivered bool   `json:"delivered"`
 }
 
+// ======================== LIKE HANDLER (copy-paste) ========================
 func (h *Handler) LikeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		h.writeJSON(w, http.StatusMethodNotAllowed, likeAPIResponse{OK: false, Message: "method not allowed"})
@@ -357,6 +432,7 @@ func (h *Handler) LikeHandler(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, http.StatusUnauthorized, likeAPIResponse{OK: false, Message: "unauthorized"})
 		return
 	}
+
 	fromUser, err := h.userRepo.GetUserByTelegramId(fromTG)
 	if err != nil || fromUser == nil {
 		h.logger.Error("like: sender not found", zap.Int64("fromTG", fromTG), zap.Error(err))
@@ -383,6 +459,22 @@ func (h *Handler) LikeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// --- Rate limit: 1 like per 3h per (from→to) pair
+	key := rlKey("like", fromUser.TelegramId, toUser.TelegramId)
+	allowed, left, err := h.redisClient.HitOnce(r.Context(), key, pairLimitTTL)
+	if err != nil {
+		h.writeJSON(w, http.StatusInternalServerError, likeAPIResponse{OK: false, Message: "rate limit error"})
+		return
+	}
+	if !allowed {
+		h.writeJSON(w, http.StatusTooManyRequests, likeAPIResponse{
+			OK:      false,
+			Message: fmt.Sprintf("Сіз бұл қолданушыға соңғы 3 сағатта лайк жібердіңіз. Қайта көріңіз %s кейін.", humanDur(left)),
+		})
+		return
+	}
+
+	// Send like (async)
 	go func(from *domain.User, to *domain.User) {
 		if ok := h.sendLike(context.Background(), h.bot, from, to); !ok {
 			h.logger.Warn("like: delivery failed",
@@ -392,8 +484,10 @@ func (h *Handler) LikeHandler(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 	}(fromUser, toUser)
+
 	h.writeJSON(w, http.StatusOK, likeAPIResponse{OK: true, Message: "liked", Delivered: true})
 }
+
 
 // sendLike now takes both users explicitly and returns whether delivery happened
 func (h *Handler) sendLike(ctx context.Context, b *bot.Bot, from *domain.User, to *domain.User) bool {
@@ -423,7 +517,9 @@ func (h *Handler) sendLike(ctx context.Context, b *bot.Bot, from *domain.User, t
 		ageText,
 		about,
 	)
-
+    kb := keyboard.NewKeyboard()
+	kb.AddRow(keyboard.NewInlineButton("💬 Сөйлесуді бастау", fmt.Sprintf("select_%d", from.TelegramId)))
+			
 	if p := strings.TrimSpace(from.AvatarPath); p != "" {
 		if f, err := os.Open(p); err != nil {
 			h.logger.Warn("like: open avatar failed", zap.String("path", p), zap.Error(err))
@@ -431,8 +527,6 @@ func (h *Handler) sendLike(ctx context.Context, b *bot.Bot, from *domain.User, t
 			defer f.Close()
 			ctxPhoto, cancel := context.WithTimeout(ctx, 20*time.Second)
 			defer cancel()
-			kb := keyboard.NewKeyboard()
-			kb.AddRow(keyboard.NewInlineButton("💬 Сөйлесуді бастау", fmt.Sprintf("select_%d", from.TelegramId)))
 			_, err := b.SendPhoto(ctxPhoto, &bot.SendPhotoParams{
 				ChatID:         to.TelegramId,
 				Photo:          &models.InputFileUpload{Data: f, Filename: filepath.Base(p)},
@@ -443,6 +537,7 @@ func (h *Handler) sendLike(ctx context.Context, b *bot.Bot, from *domain.User, t
 			if err == nil {
 				return true
 			}
+			fmt.Println(err.Error())
 			h.logger.Error("like: sendPhoto failed", zap.Error(err))
 		}
 	}
@@ -453,6 +548,7 @@ func (h *Handler) sendLike(ctx context.Context, b *bot.Bot, from *domain.User, t
 	_, err := b.SendMessage(ctxMsg, &bot.SendMessageParams{
 		ChatID:         to.TelegramId,
 		Text:           caption,
+		ReplyMarkup:    kb.Build(),
 		ProtectContent: true,
 	})
 	if err != nil {
@@ -462,6 +558,7 @@ func (h *Handler) sendLike(ctx context.Context, b *bot.Bot, from *domain.User, t
 	return true
 }
 
+// ===================== MESSAGE HANDLER (copy-paste) ========================
 func (h *Handler) MessageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		h.writeJSON(w, http.StatusMethodNotAllowed, genericAPIResponse{OK: false, Message: "method not allowed"})
@@ -500,45 +597,103 @@ func (h *Handler) MessageHandler(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, http.StatusBadRequest, genericAPIResponse{OK: false, Message: "recipient has no telegram"})
 		return
 	}
+	if toUser.TelegramId == fromUser.TelegramId {
+		h.writeJSON(w, http.StatusBadRequest, genericAPIResponse{OK: false, Message: "cannot message yourself"})
+		return
+	}
+	if h.bot == nil {
+		h.logger.Error("msg: telegram bot is nil; cannot send")
+		h.writeJSON(w, http.StatusInternalServerError, genericAPIResponse{OK: false, Message: "bot unavailable"})
+		return
+	}
 
-	// Можно сохранить в БД (если есть метод репозитория).
-	// _ = h.userRepo.InsertMessage(fromUser.Id, toUser.Id, req.Text)
+	// --- Rate limit: 1 message per 3h per (from→to) pair
+	key := rlKey("msg", fromUser.TelegramId, toUser.TelegramId)
+	allowed, left, err := h.redisClient.HitOnce(r.Context(), key, pairLimitTTL)
+	if err != nil {
+		h.writeJSON(w, http.StatusInternalServerError, genericAPIResponse{OK: false, Message: "rate limit error"})
+		return
+	}
+	if !allowed {
+		h.writeJSON(w, http.StatusTooManyRequests, genericAPIResponse{
+			OK:      false,
+			Message: fmt.Sprintf("Сіз бұл қолданушыға соңғы 3 сағатта хабарлама жібердіңіз. Қайта көріңіз %s кейін.", humanDur(left)),
+		})
+		return
+	}
 
-	// Передаём данные в контекст → шаблонная функция
+	// Pass sender and text into context for sendMessage template
 	bg := context.WithValue(context.Background(), ctxMsgFromKey, fromUser)
 	bg = context.WithValue(bg, ctxMsgTextKey, req.Text)
 	ctxSend, cancel := context.WithTimeout(bg, 15*time.Second)
 	go func() {
 		defer cancel()
-		h.sendMessage(ctxSend, h.bot, toUser)
+		h.sendMessage(ctxSend, h.bot, fromUser, toUser)
 	}()
 
 	h.writeJSON(w, http.StatusOK, genericAPIResponse{OK: true, Message: "sent"})
 }
 
+
 // Реализация шаблонной функции: отправка сообщения с подписью, кто пишет
-func (h *Handler) sendMessage(ctx context.Context, b *bot.Bot, user *domain.User) {
-	if b == nil || user == nil || user.TelegramId == 0 {
-		return
-	}
-	fromUser, _ := ctx.Value(ctxMsgFromKey).(*domain.User)
-	text, _ := ctx.Value(ctxMsgTextKey).(string)
-	if fromUser == nil || strings.TrimSpace(text) == "" {
+func (h *Handler) sendMessage(ctx context.Context, b *bot.Bot, from *domain.User, to *domain.User) {
+	if b == nil || from == nil || to == nil || to.TelegramId == 0 {
 		return
 	}
 
-	nick := safeNickKZ(fromUser.Nickname)
+	// message text comes from context (set in MessageHandler)
+	text, _ := ctx.Value(ctxMsgTextKey).(string)
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+
+	// Inline keyboard: let recipient start a chat with the sender
+	kb := keyboard.NewKeyboard()
+	kb.AddRow(keyboard.NewInlineButton("💬 Сөйлесуді бастау", fmt.Sprintf("select_%d", from.TelegramId)))
+
+	// Build pretty caption/text
+	nick := safeNickKZ(from.Nickname)
 	header := fmt.Sprintf("💬 Жаңа хабарлама %s:", nick)
 	out := header + "\n\n" + text
 
+	// Try to send profile photo + caption first
+	if p := strings.TrimSpace(from.AvatarPath); p != "" {
+		if f, err := os.Open(p); err != nil {
+			h.logger.Warn("msg: open avatar failed", zap.String("path", p), zap.Error(err))
+		} else {
+			defer f.Close()
+			ctxPhoto, cancel := context.WithTimeout(ctx, 20*time.Second)
+			defer cancel()
+
+			_, err := b.SendPhoto(ctxPhoto, &bot.SendPhotoParams{
+				ChatID:         to.TelegramId,
+				Photo:          &models.InputFileUpload{Data: f, Filename: filepath.Base(p)},
+				Caption:        out,
+				ReplyMarkup:    kb.Build(),
+				ProtectContent: true,
+			})
+			if err != nil {
+				h.logger.Error("msg: sendPhoto failed", zap.Error(err))
+			} else {
+				// Photo + caption delivered successfully — we're done
+				return
+			}
+		}
+	}
+
+	// Fallback: send plain text
 	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:         user.TelegramId,
+		ChatID:         to.TelegramId,
 		Text:           out,
+		ReplyMarkup:    kb.Build(),
 		ProtectContent: true,
 	}); err != nil {
-		h.logger.Error("send message failed", zap.Error(err))
+		h.logger.Error("msg: send text failed", zap.Error(err))
 	}
 }
+
+
 
 func (h *Handler) CheckUserHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

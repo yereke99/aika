@@ -20,6 +20,41 @@ func NewRedisClient(client *redis.Client) *ChatRepository {
 	}
 }
 
+
+// HitOnce sets key with TTL if it doesn't exist yet.
+// Returns (allowed=true) when key was created; otherwise allowed=false and ttlLeft.
+func (r *ChatRepository) HitOnce(ctx context.Context, key string, ttl time.Duration) (allowed bool, ttlLeft time.Duration, err error) {
+	ok, err := r.client.SetNX(ctx, key, "1", ttl).Result()
+	if err != nil {
+		return false, 0, err
+	}
+	if ok {
+		return true, 0, nil
+	}
+	ttlLeft, err = r.client.TTL(ctx, key).Result()
+	if err != nil {
+		return false, 0, err
+	}
+	if ttlLeft < 0 {
+		ttlLeft = 0
+	}
+	return false, ttlLeft, nil
+}
+
+// TTL returns remaining TTL (0 if none/expired).
+func (r *ChatRepository) TTL(ctx context.Context, key string) (time.Duration, error) {
+	d, err := r.client.TTL(ctx, key).Result()
+	if err != nil {
+		return 0, err
+	}
+	if d < 0 {
+		return 0, nil
+	}
+	return d, nil
+}
+
+
+
 // User state methods
 func (r *ChatRepository) SaveUserState(ctx context.Context, userID int64, state *domain.UserState) error {
 	key := fmt.Sprintf("user_state:%d", userID)

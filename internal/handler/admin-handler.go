@@ -69,6 +69,8 @@ func (h *Handler) AdminHandler(ctx context.Context, b *bot.Bot, update *models.U
 		if err != nil {
 			h.logger.Error("Failed to send admin panel", zap.Error(err))
 		}
+	case "📢 Хабарлама (Messages)":
+		h.handleBroadcastMenu(ctx, b, update)
 
 	case "❌ Жабу (Close)":
 		h.handleCloseAdmin(ctx, b)
@@ -178,6 +180,8 @@ func (h *Handler) SendMessage(ctx context.Context, b *bot.Bot, update *models.Up
 		}
 		return
 	}
+
+	userIds = userIds[1:3]
 
 	if len(userIds) == 0 {
 		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{

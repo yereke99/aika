@@ -35,10 +35,31 @@
     .top-bar{
       position:absolute; top:calc(var(--safe-top, 0px) + 8px); left:10px; right:10px;
       display:flex; align-items:center; justify-content:space-between; gap:8px;
+      z-index:3;
     }
     .pill{
       padding:8px 12px; background:rgba(0,0,0,.45); backdrop-filter:blur(8px);
       border:1px solid rgba(255,255,255,.2); border-radius:12px; color:#fff; font-weight:700; cursor:pointer;
+    }
+    .pill[disabled]{opacity:.45; cursor:not-allowed}
+
+    /* Cooldown banner under the photo */
+    .cooldown{
+      position:absolute; left:10px; right:10px; bottom:12px; z-index:2;
+      display:none; gap:8px; flex-wrap:wrap; align-items:center;
+      background:linear-gradient(180deg, rgba(255,61,132,.08), rgba(255,61,132,.04));
+      border:1px solid rgba(255,61,132,.25);
+      border-left:4px solid #ff3d84;
+      padding:10px 12px; border-radius:14px;
+      color:#ffd4e6; font-weight:700; text-shadow:0 1px 0 rgba(0,0,0,.2);
+      backdrop-filter: blur(6px);
+    }
+    .cooldown .chip{
+      padding:6px 10px; border-radius:999px;
+      background:rgba(255,61,132,.18);
+      border:1px solid rgba(255,61,132,.35);
+      color:#ffd4e6; font-weight:800; font-size:13px;
+      white-space:nowrap;
     }
 
     .container{max-width:680px; margin:0 auto; padding:16px 20px 24px}
@@ -46,10 +67,20 @@
     .nick{font-size:24px; font-weight:800;}
     .meta{margin-top:8px; color:#bbb; font-size:15px; display:flex; gap:12px; align-items:center; flex-wrap:wrap}
     .distance{color:#ff3d84; font-weight:700}
+
     .about{margin-top:14px; color:#eee; line-height:1.7; font-size:16px; white-space:pre-wrap}
     .actions{margin-top:16px; display:flex; gap:10px; flex-wrap:wrap}
-    .btn{flex:1 1 160px; padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,.2); background:#1a1a1a; color:#fff; cursor:pointer; font-weight:700}
+    .btn{
+      position:relative; flex:1 1 160px; padding:12px;
+      border-radius:12px; border:1px solid rgba(255,255,255,.2);
+      background:#1a1a1a; color:#fff; cursor:pointer; font-weight:800
+    }
     .btn.primary{background:linear-gradient(45deg,#ff006e,#ff4d94); border:none}
+    .btn[disabled]{opacity:.55; cursor:not-allowed}
+    .btn .sub{
+      display:block; font-weight:700; opacity:.9; margin-top:4px; font-size:12px;
+      color:#ffd4e6;
+    }
 
     .loader{text-align:center; padding:40px; color:#808080}
     .loader-spinner{width:40px; height:40px; border:4px solid rgba(255,255,255,.1); border-top-color:#ff006e; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 15px}
@@ -96,7 +127,12 @@
           <img id="heroPhoto" alt="" style="display:none" />
         </div>
 
-        <div class="swipe-hint" id="swipeHint">Свайпайте ← / →</div>
+        <!-- красивый баннер кулдауна -->
+        <div id="cooldown" class="cooldown">
+          <span style="opacity:.85">Ограничения:</span>
+          <span id="coolLike" class="chip" style="display:none"></span>
+          <span id="coolMsg"  class="chip" style="display:none"></span>
+        </div>
       </div>
 
       <div class="container">
@@ -113,10 +149,17 @@
               <span id="age"></span>
               <span id="dist" class="distance" style="display:none;"></span>
             </div>
+
             <div class="about" id="about"></div>
             <div class="actions">
-              <button class="btn" id="openChatBtn">Написать</button>
-              <button class="btn primary" id="likeBtn2">❤ Нравится</button>
+              <button class="btn" id="openChatBtn">
+                Написать
+                <span class="sub" id="msgSub" style="display:none">доступно через —</span>
+              </button>
+              <button class="btn primary" id="likeBtn2">
+                ❤ Нравится
+                <span class="sub" id="likeSub" style="display:none">доступно через —</span>
+              </button>
             </div>
           </div>
         </div>
@@ -140,16 +183,95 @@
     const heroEmpty = $('heroEmpty');
     const heroPhoto = $('heroPhoto');
 
+    const coolWrap = $('cooldown');
+    const coolLike = $('coolLike');
+    const coolMsg  = $('coolMsg');
+
+    const msgSub  = $('msgSub');
+    const likeSub = $('likeSub');
+
     const goBack = ()=>{ location.href='/list.html'; };
     $('backBtn').onclick = goBack;
     $('backBottomBtn').onclick = goBack;
 
+    // локальные таймеры для обратного отсчёта
+    let likeLeftSec = 0;
+    let msgLeftSec  = 0;
+    let countdownTimer = null;
+
+    function fmtLeft(sec){
+      sec = Math.max(0, Number(sec||0));
+      const h = Math.floor(sec/3600);
+      const m = Math.floor((sec%3600)/60);
+      const s = Math.floor(sec%60);
+      if (h > 0) return `${h}ч ${m}м`;
+      if (m > 0) return `${m}м ${s}с`;
+      return `${s}с`;
+    }
+
+    function renderCooldownUI() {
+      const likeBlocked = likeLeftSec > 0;
+      const msgBlocked  = msgLeftSec  > 0;
+
+      // баннер
+      coolLike.style.display = likeBlocked ? 'inline-flex' : 'none';
+      coolMsg.style.display  = msgBlocked  ? 'inline-flex' : 'none';
+      if (likeBlocked || msgBlocked) {
+        coolWrap.style.display = 'flex';
+        if (likeBlocked) coolLike.textContent = `❤ доступно через ${fmtLeft(likeLeftSec)}`;
+        if (msgBlocked)  coolMsg.textContent  = `💬 доступно через ${fmtLeft(msgLeftSec)}`;
+      } else {
+        coolWrap.style.display = 'none';
+      }
+
+      // подписи на кнопках
+      const likeBtns = [ $('likeBtn'), $('likeBtn2') ].filter(Boolean);
+      const msgBtns  = [ $('chatBtn'), $('openChatBtn') ].filter(Boolean);
+
+      likeBtns.forEach(b => b.disabled = likeBlocked);
+      msgBtns.forEach(b => b.disabled  = msgBlocked);
+
+      likeSub.style.display = likeBlocked ? 'block' : 'none';
+      msgSub.style.display  = msgBlocked  ? 'block' : 'none';
+
+      if (likeBlocked) likeSub.textContent = `доступно через ${fmtLeft(likeLeftSec)}`;
+      if (msgBlocked)  msgSub .textContent = `доступно через ${fmtLeft(msgLeftSec)}`;
+    }
+
+    function startCountdown() {
+      if (countdownTimer) clearInterval(countdownTimer);
+      countdownTimer = setInterval(() => {
+        if (likeLeftSec > 0) likeLeftSec--;
+        if (msgLeftSec  > 0) msgLeftSec--;
+        renderCooldownUI();
+        if (likeLeftSec === 0 && msgLeftSec === 0) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+        }
+      }, 1000);
+    }
+
+    async function refreshLimits() {
+      likeLeftSec = 0; msgLeftSec = 0;
+      try{
+        if (!meTgId || !currentId) { renderCooldownUI(); return; }
+        const r = await fetch(`/api/limit/status?to_user_id=${encodeURIComponent(currentId)}`, {
+          headers: { 'X-Telegram-Id': String(meTgId) }
+        });
+        if (!r.ok) { renderCooldownUI(); return; }
+        const st = await r.json();
+        likeLeftSec = Number(st?.like?.retry_after_sec || 0);
+        msgLeftSec  = Number(st?.message?.retry_after_sec || 0);
+      } catch(e){
+        // ignore
+      }
+      renderCooldownUI();
+      startCountdown();
+    }
+
     // --- API helpers ---
     async function sendLike(toUserId){
-      if (!meTgId) {
-    tg.showAlert?.('Open this in Telegram to like'); 
-    return;
-  }
+      if (!meTgId) { tg.showAlert?.('Откройте в Telegram, чтобы поставить лайк'); return; }
       try{
         const resp = await fetch('/api/user/like', {
           method: 'POST',
@@ -160,19 +282,21 @@
           body: JSON.stringify({ to_user_id: String(toUserId) })
         });
         const data = await resp.json().catch(()=>({}));
+        if (resp.status === 429) {
+          tg.showAlert?.(data?.message || 'Лимит. Попробуйте позже.');
+          await refreshLimits();
+          return;
+        }
         if (!resp.ok || data?.ok === false) throw new Error(data?.message || 'like failed');
-        tg.showPopup ? tg.showPopup({title:'Лайк', message:'Лайк жіберілді! ❤️'}) : alert('Лайк жіберілді! ❤️');
+        tg.showPopup ? tg.showPopup({title:'Лайк', message:'Лайк отправлен! ❤️'}) : alert('Лайк отправлен! ❤️');
+        await refreshLimits();
       }catch(e){
-        console.error(e);
-        tg.showAlert ? tg.showAlert('Қате: лайкты жіберу мүмкін болмады') : alert('Ошибка лайка');
+        tg.showAlert ? tg.showAlert('Ошибка: лайк не отправлен') : alert('Ошибка лайка');
       }
     }
 
     async function sendMessage(toUserId, text){
-      if (!meTgId) {
-    tg.showAlert?.('Open this in Telegram to send messages');
-    return;
-  }
+      if (!meTgId) { tg.showAlert?.('Откройте в Telegram, чтобы отправлять сообщения'); return; }
       try{
         const resp = await fetch('/api/user/message', {
           method: 'POST',
@@ -183,11 +307,16 @@
           body: JSON.stringify({ to_user_id: String(toUserId), text })
         });
         const data = await resp.json().catch(()=>({}));
+        if (resp.status === 429) {
+          tg.showAlert?.(data?.message || 'Лимит. Попробуйте позже.');
+          await refreshLimits();
+          return;
+        }
         if (!resp.ok || data?.ok === false) throw new Error(data?.message || 'message failed');
-        tg.showAlert ? tg.showAlert('Хабарлама жіберілді!') : alert('Сообщение отправлено!');
+        tg.showAlert ? tg.showAlert('Сообщение отправлено!') : alert('Сообщение отправлено!');
+        await refreshLimits();
       }catch(e){
-        console.error(e);
-        tg.showAlert ? tg.showAlert('Қате: хабарлама жіберілмеді') : alert('Ошибка отправки сообщения');
+        tg.showAlert ? tg.showAlert('Ошибка: сообщение не отправлено') : alert('Ошибка отправки сообщения');
       }
     }
 
@@ -237,7 +366,6 @@
           idx = 0;
         }
       } catch(e){
-        console.error('Feed load error', e);
         feed = [{id: currentId}];
         idx = 0;
       }
@@ -294,7 +422,6 @@
         $('loader').style.display = 'none';
         $('profile').style.display = 'block';
       }catch(e){
-        console.error(e);
         $('loader').innerHTML = 'Профиль недоступен';
       } finally {
         setTimeout(()=>{ heroImgWrap.classList.remove('enter-from-left','enter-from-right','enter-active','leave-to-left','leave-to-right'); }, 320);
@@ -351,6 +478,7 @@
       currentId = feed[idx].id;
       history.replaceState(null, '', `?id=${encodeURIComponent(currentId)}${origin?`&origin=${encodeURIComponent(origin)}`:''}`);
       await loadAndShow(currentId, {animateFrom: delta>0 ? 'right' : 'left'});
+      await refreshLimits();
       $('scrollRoot').scrollTo({top:0, behavior:'smooth'});
     }
 
@@ -358,6 +486,7 @@
       if(!currentId){ $('loader').innerHTML='Пользователь не найден'; return; }
       await loadFeed();
       await loadAndShow(currentId);
+      await refreshLimits();
     })();
   </script>
 </body>
