@@ -28,3 +28,11 @@ func NewInlineButton(text, callbackData string) models.InlineKeyboardButton {
 		CallbackData: callbackData,
 	}
 }
+
+func NewWebAppButton(text, url string) models.InlineKeyboardButton {
+	return models.InlineKeyboardButton{
+		Text:  text,
+		WebApp: &models.WebAppInfo{URL: url},
+	}
+}
+

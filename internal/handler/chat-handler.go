@@ -104,13 +104,18 @@ func (h *Handler) HandleChat(ctx context.Context, b *bot.Bot, update *models.Upd
 	if err != nil {
 		h.logger.Error("error get user partner", zap.Error(err))
 	}
+    
 
 	if partnerID == 0 {
+		kb := keyboard.NewKeyboard()
+	    kb.AddRow(keyboard.NewWebAppButton("🚀 AIKA Mini App", h.cfg.MiniAppURL))
+
 		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "Собеседник не найден. Чатқа қосылу үшін '💬 Chat' батырмасын басыңыз.",
+			ChatID:      update.Message.Chat.ID,
+			Text:        "Чатқа қосылу үшін төмендегі 🚀 AIKA Mini App батырмасын басыңыз.",
+			ReplyMarkup: kb.Build(),
 		})
-		return
+	return
 	}
 
 	senderNickname, err := h.userRepo.GetUserNickname(userID)

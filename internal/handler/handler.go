@@ -27,6 +27,15 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	stateStart      string = "start"
+	stateCount      string = "count"
+	statePaid       string = "paid"
+	stateContact    string = "contact"
+	stateAdminPanel string = "admin_panel"
+	stateBroadcast  string = "broadcast"
+)
+
 // ---------- API: MESSAGE ----------
 type messageAPIRequest struct {
 	ToUserID string `json:"to_user_id"`
@@ -72,6 +81,43 @@ func (h *Handler) DefaultHandler(ctx context.Context, b *bot.Bot, update *models
 		return
 	}
 
+    userId := update.Message.From.ID
+	
+	ok, errE := h.userRepo.ExistsJust(ctx, userId)
+	if errE != nil {
+		h.logger.Error("Failed to check user", zap.Error(errE))
+	} else if !ok {
+		timeNow := time.Now().Format("2006-01-02 15:04:05")
+		h.logger.Info("New user", zap.String("user_id", strconv.FormatInt(userId, 10)), zap.String("date", timeNow))
+		if errN := h.userRepo.InsertJust(ctx, domain.JustEntry{
+			UserId:         userId,
+			UserName:       update.Message.From.Username,
+			DateRegistered: timeNow,
+		}); errN != nil {
+			h.logger.Error("Failed to insert user", zap.Error(errN))
+		}
+	}
+
+	if update.CallbackQuery != nil {
+		case stateAdminPanel:
+			h.AdminHandler(ctx, b, update)
+		case stateBroadcast:
+			h.SendMessage(ctx, b, update)
+		default:
+			h.DefaultHandler(ctx, b, update)
+		}
+		return
+	}
+
+	switch userState.State {
+	case stateAdminPanel:
+		h.AdminHandler(ctx, b, update)
+	case stateBroadcast:
+		h.SendMessage(ctx, b, update)
+	default:
+		h.DefaultHandler(ctx, b, update)
+	}
+
 	h.HandleChat(ctx, b, update)
 
 	h.logger.Info("Received message",
@@ -86,6 +132,10 @@ func (h *Handler) StartWebServer(ctx context.Context, b *bot.Bot) {
 	mux := http.NewServeMux()
 
 	// HTML pages
+	mux.HandleFunc("/logo", func(w http.ResponseWriter, r *http.Request){
+		path := "./static/logo.html"
+		http.ServeFile(w, r, path)
+	})
 	mux.HandleFunc("/", h.WelcomePageHandler)
 	mux.HandleFunc("/welcome.html", h.WelcomePageHandler)
 	mux.HandleFunc("/register.html", h.RegisterPageHandler)
@@ -144,7 +194,6 @@ func (h *Handler) corsMiddleware(next http.Handler) http.Handler {
 }
 
 // ---------- Page Handlers
-
 func serveHTML(w http.ResponseWriter, r *http.Request, path string, logger *zap.Logger) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		logger.Error("file not found", zap.String("path", path))

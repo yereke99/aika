@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
+    "context"
 	"github.com/google/uuid"
 )
 
@@ -16,6 +16,25 @@ type UserRepository struct {
 
 func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
+}
+
+func (r *UserRepository) GetAllJustUserIDs(ctx context.Context) ([]int64, error) {
+	const q = `SELECT id_user FROM just ORDER BY created_at DESC;`
+	rows, err := r.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var userIDs []int64
+	for rows.Next() {
+		var userID int64
+		if err := rows.Scan(&userID); err != nil {
+			continue
+		}
+		userIDs = append(userIDs, userID)
+	}
+	return userIDs, nil
 }
 
 func (r *UserRepository) UpdateUser(user *domain.User) error {
@@ -63,6 +82,26 @@ func (r *UserRepository) UpdateUser(user *domain.User) error {
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+// ExistsJust проверяет, есть ли запись в just по id_user
+func (r *UserRepository) ExistsJust(ctx context.Context, userId int64) (bool, error) {
+	const q = `SELECT COUNT(1) FROM just WHERE id_user=?;`
+	var cnt int
+	if err := r.db.QueryRowContext(ctx, q, userId).Scan(&cnt); err != nil {
+		return false, err
+	}
+	return cnt > 0, nil
+}
+
+// InsertJust вставляет запись в таблицу just с учетом новых полей (SQLite version)
+func (r *UserRepository) InsertJust(ctx context.Context, e domain.JustEntry) error {
+	const q = `
+		INSERT OR REPLACE INTO just (id_user, userName, dataRegistred, updated_at)
+		VALUES (?, ?, ?, datetime('now'));
+	`
+	_, err := r.db.ExecContext(ctx, q, e.UserId, e.UserName, e.DateRegistered)
+	return err
 }
 
 // в repository.UserRepository

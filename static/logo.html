@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIKA Profile Images</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #fff;
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 40px;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
+      align-items: center;
+      max-width: 900px;
+      width: 100%;
+    }
+
+    .image-section {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 30px;
+      border-radius: 20px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    h2 {
+      font-size: 24px;
+      margin-bottom: 10px;
+      color: #ff80b3;
+    }
+
+    canvas {
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      max-width: 100%;
+      height: auto;
+    }
+
+    .download-btn {
+      padding: 14px 35px;
+      background: linear-gradient(135deg, #ff006e, #ff4d94);
+      border: none;
+      border-radius: 10px;
+      color: white;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.2s;
+      box-shadow: 0 8px 25px rgba(255, 0, 110, 0.4);
+    }
+
+    .download-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 35px rgba(255, 0, 110, 0.5);
+    }
+
+    .download-btn:active {
+      transform: translateY(0);
+    }
+
+    .info {
+      font-size: 14px;
+      color: #b8b8d1;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="image-section">
+      <h2>Profile Picture (800x800)</h2>
+      <canvas id="profileCanvas" width="800" height="800"></canvas>
+      <button class="download-btn" onclick="downloadCanvas('profileCanvas', 'AIKA-Profile-800x800.png')">
+        ⬇️ Download Profile Picture (PNG)
+      </button>
+      <p class="info">Perfect for Telegram profile, Instagram, and social media</p>
+    </div>
+
+    <div class="image-section">
+      <h2>Banner (640x360)</h2>
+      <canvas id="bannerCanvas" width="640" height="360"></canvas>
+      <button class="download-btn" onclick="downloadCanvas('bannerCanvas', 'AIKA-Banner-640x360.png')">
+        ⬇️ Download Banner (PNG)
+      </button>
+      <p class="info">Perfect for channel covers and headers</p>
+    </div>
+  </div>
+
+  <script>
+    // Draw Profile Picture
+    function drawProfilePic() {
+      const canvas = document.getElementById('profileCanvas');
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+
+      // Background gradient
+      const bgGradient = ctx.createLinearGradient(0, 0, width, height);
+      bgGradient.addColorStop(0, '#0f0c29');
+      bgGradient.addColorStop(0.5, '#302b63');
+      bgGradient.addColorStop(1, '#24243e');
+      ctx.fillStyle = bgGradient;
+      ctx.fillRect(0, 0, width, height);
+
+      // Glowing circles
+      const glowGradient1 = ctx.createRadialGradient(width * 0.3, height * 0.3, 0, width * 0.3, height * 0.3, width * 0.6);
+      glowGradient1.addColorStop(0, 'rgba(255, 0, 110, 0.3)');
+      glowGradient1.addColorStop(1, 'transparent');
+      ctx.fillStyle = glowGradient1;
+      ctx.fillRect(0, 0, width, height);
+
+      const glowGradient2 = ctx.createRadialGradient(width * 0.7, height * 0.7, 0, width * 0.7, height * 0.7, width * 0.6);
+      glowGradient2.addColorStop(0, 'rgba(138, 43, 226, 0.3)');
+      glowGradient2.addColorStop(1, 'transparent');
+      ctx.fillStyle = glowGradient2;
+      ctx.fillRect(0, 0, width, height);
+
+      // Heart emoji
+      ctx.font = 'bold 280px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = 'rgba(255, 0, 110, 0.6)';
+      ctx.shadowBlur = 40;
+      ctx.fillText('💕', width / 2, height / 2 - 60);
+      
+      // Reset shadow
+      ctx.shadowBlur = 0;
+
+      // AIKA text with gradient
+      const textGradient = ctx.createLinearGradient(0, height / 2 + 150, width, height / 2 + 150);
+      textGradient.addColorStop(0, '#ff006e');
+      textGradient.addColorStop(0.5, '#ff4d94');
+      textGradient.addColorStop(1, '#ff80b3');
+      
+      ctx.font = 'bold 120px Arial';
+      ctx.fillStyle = textGradient;
+      ctx.letterSpacing = '20px';
+      ctx.fillText('AIKA', width / 2 + 40, height / 2 + 180);
+    }
+
+    // Draw Banner
+    function drawBanner() {
+      const canvas = document.getElementById('bannerCanvas');
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+
+      // Background gradient
+      const bgGradient = ctx.createLinearGradient(0, 0, width, height);
+      bgGradient.addColorStop(0, '#0f0c29');
+      bgGradient.addColorStop(0.5, '#302b63');
+      bgGradient.addColorStop(1, '#24243e');
+      ctx.fillStyle = bgGradient;
+      ctx.fillRect(0, 0, width, height);
+
+      // Glowing effects
+      const glowGradient1 = ctx.createRadialGradient(width * 0.2, height * 0.5, 0, width * 0.2, height * 0.5, width * 0.4);
+      glowGradient1.addColorStop(0, 'rgba(255, 0, 110, 0.25)');
+      glowGradient1.addColorStop(1, 'transparent');
+      ctx.fillStyle = glowGradient1;
+      ctx.fillRect(0, 0, width, height);
+
+      const glowGradient2 = ctx.createRadialGradient(width * 0.8, height * 0.5, 0, width * 0.8, height * 0.5, width * 0.4);
+      glowGradient2.addColorStop(0, 'rgba(138, 43, 226, 0.25)');
+      glowGradient2.addColorStop(1, 'transparent');
+      ctx.fillStyle = glowGradient2;
+      ctx.fillRect(0, 0, width, height);
+
+      // Decorative hearts
+      ctx.font = '35px Arial';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.fillText('💕', width * 0.15, height * 0.2);
+      ctx.fillText('💕', width * 0.85, height * 0.75);
+      ctx.font = '30px Arial';
+      ctx.fillText('💕', width * 0.1, height * 0.65);
+      ctx.fillText('💕', width * 0.9, height * 0.3);
+
+      // Heart emoji (main)
+      ctx.font = 'bold 140px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = 'rgba(255, 0, 110, 0.5)';
+      ctx.shadowBlur = 30;
+      ctx.fillText('💕', width * 0.28, height / 2);
+      
+      // Reset shadow
+      ctx.shadowBlur = 0;
+
+      // AIKA text with gradient
+      const textGradient = ctx.createLinearGradient(width * 0.4, 0, width, 0);
+      textGradient.addColorStop(0, '#ff006e');
+      textGradient.addColorStop(0.5, '#ff4d94');
+      textGradient.addColorStop(1, '#ff80b3');
+      
+      ctx.font = 'bold 90px Arial';
+      ctx.fillStyle = textGradient;
+      ctx.textAlign = 'left';
+      ctx.fillText('AIKA', width * 0.45, height / 2 - 20);
+
+      // Tagline
+      ctx.font = '24px Arial';
+      ctx.fillStyle = '#b8b8d1';
+      ctx.fillText('Жаңа танысулар', width * 0.45, height / 2 + 35);
+    }
+
+    // Download function
+    function downloadCanvas(canvasId, filename) {
+      const canvas = document.getElementById(canvasId);
+      
+      canvas.toBlob(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    }
+
+    // Draw both images on page load
+    window.onload = function() {
+      drawProfilePic();
+      drawBanner();
+    };
+  </script>
+</body>
+</html>

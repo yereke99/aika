@@ -34,7 +34,8 @@ func CreateTables(db *sql.DB) error {
 	tables := []struct {
 		name string
 		fn   func(*sql.DB) error
-	}{
+	}{  
+		{"just", createJustTable},
 		{"users", createUsersTable},
 	}
 
@@ -47,6 +48,22 @@ func CreateTables(db *sql.DB) error {
 
 	log.Println("All tables created successfully")
 	return nil
+}
+
+// createJustTable creates the just table (existing)
+func createJustTable(db *sql.DB) error {
+	const stmt = `
+	CREATE TABLE IF NOT EXISTS just (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		id_user BIGINT NOT NULL UNIQUE,
+		userName VARCHAR(255) NOT NULL,
+		dataRegistred VARCHAR(50) NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	_, err := db.Exec(stmt)
+	return err
 }
 
 func createUsersTable(db *sql.DB) error {

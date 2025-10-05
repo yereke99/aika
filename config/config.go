@@ -9,12 +9,13 @@ type Config struct {
 	Port        string
 	DBPath      string
 	ChannelName string
+	MiniAppURL  string
 }
 
 func NewConfig() (*Config, error) {
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
-		token = "8159719184:AAF-uQXUxzPXFjTS0A8-HR--FkEbsIvqtRg"
+		token = "7694748047:AAFwsmM57F2mUdBzqinu3cc7IOBkw1ZcDDk"
 	}
 
 	port := os.Getenv("PORT")
@@ -32,5 +33,6 @@ func NewConfig() (*Config, error) {
 		Port:        port,
 		DBPath:      dbPath,
 		ChannelName: "@jaiAngmeAitamyz",
+		MiniAppURL:  "https://erek001.bnna.dev",
 	}, nil
 }
