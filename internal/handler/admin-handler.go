@@ -181,8 +181,6 @@ func (h *Handler) SendMessage(ctx context.Context, b *bot.Bot, update *models.Up
 		return
 	}
 
-	userIds = userIds[1:3]
-
 	if len(userIds) == 0 {
 		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: adminId,

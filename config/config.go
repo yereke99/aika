@@ -21,7 +21,7 @@ func NewConfig() (*Config, error) {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8081"
 	}
 
 	dbPath := os.Getenv("DB_PATH")
@@ -34,7 +34,7 @@ func NewConfig() (*Config, error) {
 		Port:        port,
 		DBPath:      dbPath,
 		ChannelName: "@jaiAngmeAitamyz",
-		MiniAppURL:  "https://erek001.bnna.dev",
+		MiniAppURL:  "https://meily.kz",
 		AdminID:     800703982,
 	}, nil
 }

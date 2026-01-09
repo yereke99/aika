@@ -15,14 +15,14 @@ import (
 func ConnectRedis(ctx context.Context, logger *zap.Logger) (*redis.Client, error) {
 	// Redis connection options matching your docker-compose
 	rdb := redis.NewClient(&redis.Options{
-		Addr:         "localhost:6379", // Redis server address
-		Password:     "",               // No password set
-		DB:           0,                // Use default DB
-		DialTimeout:  5 * time.Second,  // Connection timeout
-		ReadTimeout:  3 * time.Second,  // Read timeout
-		WriteTimeout: 3 * time.Second,  // Write timeout
-		PoolSize:     10,               // Connection pool size
-		MinIdleConns: 2,                // Minimum idle connections
+		Addr:         "localhost:6379",          // Redis server address
+		Password:     "YOUR_PASSWORD_HERE_1999", // No password set
+		DB:           0,                         // Use default DB
+		DialTimeout:  5 * time.Second,           // Connection timeout
+		ReadTimeout:  3 * time.Second,           // Read timeout
+		WriteTimeout: 3 * time.Second,           // Write timeout
+		PoolSize:     10,                        // Connection pool size
+		MinIdleConns: 2,                         // Minimum idle connections
 	})
 
 	// Test the connection

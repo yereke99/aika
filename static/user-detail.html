@@ -1,91 +1,330 @@
-<!-- static/user-detail.html -->
+<!-- static/user-detail.html (FULL / TG FULLSCREEN SAFE-AREA FIX + DESIGN IMPROVE + SAME LOGIC) -->
 <!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=no"/>
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual"
+  />
   <title>AIKA — Профиль</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    html,body{height:100%;background:#000}
+    html,body{height:100%}
+
     :root{
+      /* iOS safe area */
       --safe-top: env(safe-area-inset-top);
       --safe-bottom: env(safe-area-inset-bottom);
+
+      /* Telegram safe area + viewport vars (fallbacks) */
+      --tg-safe-area-inset-top: 0px;
+      --tg-safe-area-inset-bottom: 0px;
+      --tg-content-safe-area-inset-top: 0px;
+      --tg-viewport-stable-height: 100vh;
+
+      /* unified app paddings */
+      --pad-top: calc(
+        max(var(--safe-top, 0px), var(--tg-safe-area-inset-top, 0px)) +
+        var(--tg-content-safe-area-inset-top, 0px) +
+        10px
+      );
+      --pad-bottom: calc(
+        max(var(--safe-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px)) +
+        12px
+      );
+
+      --glass: rgba(0,0,0,.46);
+      --glass-border: rgba(255,255,255,.16);
+
+      --accent: #ff3d84;
+      --accent2: #ff006e;
+      --accent3: #b983ff;
+
+      --txt: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.66);
     }
+
     body{
-      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-      color:#fff; background:#000;
-      overscroll-behavior-y:contain; touch-action:manipulation;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Inter,system-ui,sans-serif;
+      color:#fff;
+      background:
+        radial-gradient(900px 600px at 12% 8%, rgba(255,0,110,.14), transparent 60%),
+        radial-gradient(900px 600px at 90% 18%, rgba(185,131,255,.12), transparent 60%),
+        linear-gradient(180deg,#000 0%, #060010 100%);
+      overscroll-behavior-y:contain;
+      touch-action:manipulation;
+      height: var(--tg-viewport-stable-height, 100vh);
+      min-height: 100vh;
+      overflow:hidden;
     }
-    .app{position:fixed; inset:0; display:flex; flex-direction:column; background:#000;}
-    .scroll{flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none;}
+
+    /* App shell */
+    .app{
+      position:fixed;
+      inset:0;
+      display:flex;
+      flex-direction:column;
+      background: transparent;
+      padding-top: var(--pad-top);
+      padding-bottom: var(--pad-bottom);
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    .scroll{
+      flex:1;
+      overflow-y:auto;
+      overflow-x:hidden;
+      -webkit-overflow-scrolling:touch;
+      scrollbar-width:none;
+      padding-bottom: 90px; /* room for bottom CTA */
+    }
     .scroll::-webkit-scrollbar{display:none}
 
-    .hero{position:relative; width:100%; height:min(85svh, 85dvh); background:#111; overflow:hidden;}
-    .hero-img{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;}
-    .hero-img img{width:100%; height:100%; object-fit:cover; display:block; user-select:none; -webkit-user-drag:none;}
-    .hero-empty{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-      background:linear-gradient(180deg,#181818,#0f0f0f); font-size:64px}
-    .hero::before,
-    .hero::after{content:""; position:absolute; left:0; right:0; pointer-events:none;}
-    .hero::before{top:0; height:120px; background:linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0));}
-    .hero::after{bottom:0; height:160px; background:linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,0));}
+    /* HERO */
+    .hero{
+      position:relative;
+      width:100%;
+      height:min(82svh, 82dvh);
+      min-height: 420px;
+      background: rgba(255,255,255,.04);
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      overflow:hidden;
+      border-radius: 22px;
+      margin: 0 12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.55);
+    }
 
+    .hero-img{
+      position:absolute; inset:0;
+      display:flex; align-items:center; justify-content:center;
+    }
+
+    .hero-img img{
+      width:100%; height:100%;
+      object-fit:cover;
+      display:block;
+      user-select:none;
+      -webkit-user-drag:none;
+      transform: scale(1.02);
+      filter: saturate(1.06) contrast(1.02);
+    }
+
+    .hero-empty{
+      position:absolute; inset:0;
+      display:flex; align-items:center; justify-content:center;
+      background:
+        radial-gradient(600px 300px at 30% 20%, rgba(255,0,110,.18), transparent 55%),
+        linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+      font-size:64px;
+    }
+
+    .hero::before,
+    .hero::after{
+      content:"";
+      position:absolute; left:0; right:0;
+      pointer-events:none;
+      z-index:1;
+    }
+    .hero::before{
+      top:0; height:140px;
+      background:linear-gradient(180deg, rgba(0,0,0,.62), rgba(0,0,0,0));
+    }
+    .hero::after{
+      bottom:0; height:180px;
+      background:linear-gradient(0deg, rgba(0,0,0,.70), rgba(0,0,0,0));
+    }
+
+    /* TOP BAR – now safe, never hides under system buttons */
     .top-bar{
-      position:absolute; top:calc(var(--safe-top, 0px) + 8px); left:10px; right:10px;
-      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      position:absolute;
+      top: 10px;
+      left:10px; right:10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
       z-index:3;
+      padding-top: 0; /* safe area handled by .app padding */
     }
+
     .pill{
-      padding:8px 12px; background:rgba(0,0,0,.45); backdrop-filter:blur(8px);
-      border:1px solid rgba(255,255,255,.2); border-radius:12px; color:#fff; font-weight:700; cursor:pointer;
+      -webkit-tap-highlight-color: transparent;
+      padding:10px 12px;
+      background: var(--glass);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border:1px solid var(--glass-border);
+      border-radius:14px;
+      color:#fff;
+      font-weight:900;
+      cursor:pointer;
+      box-shadow: 0 10px 26px rgba(0,0,0,.35);
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
     }
+    .pill:active{transform:scale(.98)}
     .pill[disabled]{opacity:.45; cursor:not-allowed}
 
     /* Cooldown banner under the photo */
     .cooldown{
-      position:absolute; left:10px; right:10px; bottom:12px; z-index:2;
-      display:none; gap:8px; flex-wrap:wrap; align-items:center;
-      background:linear-gradient(180deg, rgba(255,61,132,.08), rgba(255,61,132,.04));
-      border:1px solid rgba(255,61,132,.25);
-      border-left:4px solid #ff3d84;
-      padding:10px 12px; border-radius:14px;
-      color:#ffd4e6; font-weight:700; text-shadow:0 1px 0 rgba(0,0,0,.2);
-      backdrop-filter: blur(6px);
+      position:absolute;
+      left:12px; right:12px; bottom:12px;
+      z-index:2;
+      display:none;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+      background: linear-gradient(180deg, rgba(255,61,132,.10), rgba(255,61,132,.05));
+      border:1px solid rgba(255,61,132,.28);
+      border-left:4px solid var(--accent);
+      padding:10px 12px;
+      border-radius:16px;
+      color:#ffd4e6;
+      font-weight:900;
+      text-shadow:0 1px 0 rgba(0,0,0,.2);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
     }
     .cooldown .chip{
-      padding:6px 10px; border-radius:999px;
+      padding:6px 10px;
+      border-radius:999px;
       background:rgba(255,61,132,.18);
       border:1px solid rgba(255,61,132,.35);
-      color:#ffd4e6; font-weight:800; font-size:13px;
+      color:#ffd4e6;
+      font-weight:1000;
+      font-size:13px;
       white-space:nowrap;
     }
 
-    .container{max-width:680px; margin:0 auto; padding:16px 20px 24px}
-    .card{background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:16px; padding:18px}
-    .nick{font-size:24px; font-weight:800;}
-    .meta{margin-top:8px; color:#bbb; font-size:15px; display:flex; gap:12px; align-items:center; flex-wrap:wrap}
-    .distance{color:#ff3d84; font-weight:700}
-
-    .about{margin-top:14px; color:#eee; line-height:1.7; font-size:16px; white-space:pre-wrap}
-    .actions{margin-top:16px; display:flex; gap:10px; flex-wrap:wrap}
-    .btn{
-      position:relative; flex:1 1 160px; padding:12px;
-      border-radius:12px; border:1px solid rgba(255,255,255,.2);
-      background:#1a1a1a; color:#fff; cursor:pointer; font-weight:800
+    /* CONTENT */
+    .container{
+      max-width:720px;
+      margin: 14px auto 0;
+      padding: 0 12px 24px;
     }
-    .btn.primary{background:linear-gradient(45deg,#ff006e,#ff4d94); border:none}
-    .btn[disabled]{opacity:.55; cursor:not-allowed}
+
+    .card{
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 20px;
+      padding: 18px 16px;
+      box-shadow:
+        0 20px 60px rgba(0,0,0,.35),
+        inset 0 1px 0 rgba(255,255,255,.08);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .nick{
+      font-size:24px;
+      font-weight:1000;
+      letter-spacing:.2px;
+      color: var(--txt);
+    }
+
+    .meta{
+      margin-top:10px;
+      color: var(--muted);
+      font-size:14.5px;
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:6px 10px;
+      border-radius:999px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.10);
+      color: rgba(255,255,255,.80);
+      font-weight:900;
+      font-size:13px;
+    }
+
+    .distance{
+      color: #ffd4e6;
+      background: rgba(255,61,132,.12);
+      border-color: rgba(255,61,132,.22);
+    }
+
+    .about{
+      margin-top:14px;
+      color: rgba(255,255,255,.88);
+      line-height:1.7;
+      font-size:15.5px;
+      white-space:pre-wrap;
+    }
+
+    .actions{
+      margin-top:16px;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .btn{
+      -webkit-tap-highlight-color: transparent;
+      position:relative;
+      flex:1 1 160px;
+      padding: 14px 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.06);
+      color:#fff;
+      cursor:pointer;
+      font-weight:1000;
+      overflow:hidden;
+      box-shadow: 0 16px 40px rgba(0,0,0,.28);
+    }
+
+    .btn::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      background: radial-gradient(420px 140px at 20% 0%, rgba(255,255,255,.18), transparent 55%);
+      opacity:.6;
+      pointer-events:none;
+    }
+
+    .btn:active{transform:scale(.985)}
+    .btn.primary{
+      background: linear-gradient(45deg, var(--accent2), #ff4d94);
+      border:none;
+      box-shadow: 0 18px 48px rgba(255,0,110,.22);
+    }
+    .btn[disabled]{opacity:.55; cursor:not-allowed; transform:none}
+
     .btn .sub{
-      display:block; font-weight:700; opacity:.9; margin-top:4px; font-size:12px;
+      display:block;
+      font-weight:900;
+      opacity:.92;
+      margin-top:5px;
+      font-size:12px;
       color:#ffd4e6;
     }
 
-    .loader{text-align:center; padding:40px; color:#808080}
-    .loader-spinner{width:40px; height:40px; border:4px solid rgba(255,255,255,.1); border-top-color:#ff006e; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 15px}
+    /* Loader */
+    .loader{text-align:center; padding:44px 16px; color:rgba(255,255,255,.6)}
+    .loader-spinner{
+      width:44px; height:44px;
+      border:4px solid rgba(255,255,255,.10);
+      border-top-color: var(--accent2);
+      border-radius:50%;
+      animation:spin 1s linear infinite;
+      margin:0 auto 14px
+    }
     @keyframes spin{to{transform:rotate(360deg)}}
 
+    /* Slide */
     .slide{transition:transform .28s ease, opacity .28s ease; will-change:transform, opacity;}
     .slide.enter-from-right{transform:translateX(25%); opacity:.6}
     .slide.enter-from-left{transform:translateX(-25%); opacity:.6}
@@ -93,23 +332,36 @@
     .slide.leave-to-left{transform:translateX(-25%); opacity:.6}
     .slide.leave-to-right{transform:translateX(25%); opacity:.6}
 
+    /* Bottom CTA – safe area aware, never overlaps system buttons */
     .bottom-bar{
-      position:fixed; left:0; right:0;
-      bottom:calc(var(--safe-bottom, 0px) + 10px);
-      display:flex; justify-content:center; z-index:1000; pointer-events:none;
+      position:fixed;
+      left:0; right:0;
+      bottom: 0;
+      display:flex;
+      justify-content:center;
+      z-index:1000;
+      pointer-events:none;
+      padding-bottom: var(--pad-bottom);
+      padding-top: 10px;
     }
+
     .back-cta{
       pointer-events:auto;
-      padding:12px 18px;
-      border-radius:14px;
+      padding: 12px 18px;
+      border-radius: 16px;
       border:1px solid rgba(255,255,255,.18);
-      background:rgba(0,0,0,.6);
-      backdrop-filter:blur(10px);
-      color:#fff; font-weight:800; cursor:pointer;
-      box-shadow:0 6px 24px rgba(0,0,0,.35);
+      background: rgba(0,0,0,.62);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color:#fff;
+      font-weight:1000;
+      cursor:pointer;
+      box-shadow: 0 8px 28px rgba(0,0,0,.45);
     }
+    .back-cta:active{transform:scale(.985)}
   </style>
 </head>
+
 <body>
   <div class="app">
     <div class="scroll" id="scrollRoot">
@@ -117,8 +369,8 @@
         <div class="top-bar">
           <button class="pill" id="backBtn">← Назад</button>
           <div style="display:flex; gap:8px">
-            <button class="pill" id="chatBtn">💬</button>
-            <button class="pill" id="likeBtn">❤</button>
+            <button class="pill" id="chatBtn" title="Сообщение">💬</button>
+            <button class="pill" id="likeBtn" title="Лайк">❤</button>
           </div>
         </div>
 
@@ -127,7 +379,6 @@
           <img id="heroPhoto" alt="" style="display:none" />
         </div>
 
-        <!-- красивый баннер кулдауна -->
         <div id="cooldown" class="cooldown">
           <span style="opacity:.85">Ограничения:</span>
           <span id="coolLike" class="chip" style="display:none"></span>
@@ -144,13 +395,15 @@
         <div id="profile" style="display:none;">
           <div class="card">
             <div class="nick" id="nick"></div>
+
             <div class="meta">
-              <span id="sex"></span>
-              <span id="age"></span>
-              <span id="dist" class="distance" style="display:none;"></span>
+              <span class="badge" id="sex"></span>
+              <span class="badge" id="age"></span>
+              <span class="badge distance" id="dist" style="display:none;"></span>
             </div>
 
             <div class="about" id="about"></div>
+
             <div class="actions">
               <button class="btn" id="openChatBtn">
                 Написать
@@ -172,7 +425,46 @@
   </div>
 
   <script>
-    const tg = window.Telegram?.WebApp || {}; tg.expand?.();
+    // --- Telegram Fullscreen + Safe-area sync (fix: UI going under system buttons) ---
+    const tg = window.Telegram?.WebApp;
+
+    function syncTgCssVars(){
+      if (!tg) return;
+
+      // stable height (Telegram gives real value after expand/viewportChanged)
+      const stableH = tg.viewportStableHeight || window.innerHeight;
+      document.documentElement.style.setProperty("--tg-viewport-stable-height", stableH + "px");
+
+      // try to mirror Telegram safe-area vars if client provides them (some do via computed style already)
+      // We still keep env(safe-area-inset-*) as fallback.
+      try {
+        // nothing else needed here; vars are usually injected by Telegram itself.
+      } catch (_) {}
+    }
+
+    function forceFullScreen(){
+      if (!tg) { syncTgCssVars(); return; }
+      try{
+        tg.ready?.();
+        tg.expand?.();
+        tg.requestFullscreen?.();       // newer clients
+        tg.disableVerticalSwipes?.();   // keep full height if supported
+      }catch(e){
+        // ignore
+      }
+      syncTgCssVars();
+    }
+
+    forceFullScreen();
+    window.addEventListener("load", forceFullScreen);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") forceFullScreen();
+    });
+    tg?.onEvent?.("viewportChanged", () => {
+      syncTgCssVars();
+    });
+
+    // --- Original logic (kept) ---
     const $ = id => document.getElementById(id);
     const params = new URLSearchParams(location.search);
     let currentId = params.get('id');
@@ -194,6 +486,13 @@
     $('backBtn').onclick = goBack;
     $('backBottomBtn').onclick = goBack;
 
+    // haptic on taps (nice UX)
+    document.addEventListener("click", (e) => {
+      const hit = e.target?.closest?.("button");
+      if (!hit) return;
+      try { tg?.HapticFeedback?.impactOccurred?.("light"); } catch (_) {}
+    });
+
     // локальные таймеры для обратного отсчёта
     let likeLeftSec = 0;
     let msgLeftSec  = 0;
@@ -213,9 +512,9 @@
       const likeBlocked = likeLeftSec > 0;
       const msgBlocked  = msgLeftSec  > 0;
 
-      // баннер
       coolLike.style.display = likeBlocked ? 'inline-flex' : 'none';
       coolMsg.style.display  = msgBlocked  ? 'inline-flex' : 'none';
+
       if (likeBlocked || msgBlocked) {
         coolWrap.style.display = 'flex';
         if (likeBlocked) coolLike.textContent = `❤ доступно через ${fmtLeft(likeLeftSec)}`;
@@ -224,7 +523,6 @@
         coolWrap.style.display = 'none';
       }
 
-      // подписи на кнопках
       const likeBtns = [ $('likeBtn'), $('likeBtn2') ].filter(Boolean);
       const msgBtns  = [ $('chatBtn'), $('openChatBtn') ].filter(Boolean);
 
@@ -232,10 +530,10 @@
       msgBtns.forEach(b => b.disabled  = msgBlocked);
 
       likeSub.style.display = likeBlocked ? 'block' : 'none';
-      msgSub.style.display  = msgBlocked  ? 'block' : 'none';
+      msgSub.style.display  = msgBlocked ? 'block' : 'none';
 
       if (likeBlocked) likeSub.textContent = `доступно через ${fmtLeft(likeLeftSec)}`;
-      if (msgBlocked)  msgSub .textContent = `доступно через ${fmtLeft(msgLeftSec)}`;
+      if (msgBlocked)  msgSub.textContent = `доступно через ${fmtLeft(msgLeftSec)}`;
     }
 
     function startCountdown() {
@@ -271,7 +569,7 @@
 
     // --- API helpers ---
     async function sendLike(toUserId){
-      if (!meTgId) { tg.showAlert?.('Откройте в Telegram, чтобы поставить лайк'); return; }
+      if (!meTgId) { tg?.showAlert?.('Откройте в Telegram, чтобы поставить лайк'); return; }
       try{
         const resp = await fetch('/api/user/like', {
           method: 'POST',
@@ -283,20 +581,22 @@
         });
         const data = await resp.json().catch(()=>({}));
         if (resp.status === 429) {
-          tg.showAlert?.(data?.message || 'Лимит. Попробуйте позже.');
+          tg?.showAlert?.(data?.message || 'Лимит. Попробуйте позже.');
           await refreshLimits();
           return;
         }
         if (!resp.ok || data?.ok === false) throw new Error(data?.message || 'like failed');
-        tg.showPopup ? tg.showPopup({title:'Лайк', message:'Лайк отправлен! ❤️'}) : alert('Лайк отправлен! ❤️');
+        tg?.showPopup
+          ? tg.showPopup({title:'Лайк', message:'Лайк отправлен! ❤️'})
+          : alert('Лайк отправлен! ❤️');
         await refreshLimits();
       }catch(e){
-        tg.showAlert ? tg.showAlert('Ошибка: лайк не отправлен') : alert('Ошибка лайка');
+        tg?.showAlert ? tg.showAlert('Ошибка: лайк не отправлен') : alert('Ошибка лайка');
       }
     }
 
     async function sendMessage(toUserId, text){
-      if (!meTgId) { tg.showAlert?.('Откройте в Telegram, чтобы отправлять сообщения'); return; }
+      if (!meTgId) { tg?.showAlert?.('Откройте в Telegram, чтобы отправлять сообщения'); return; }
       try{
         const resp = await fetch('/api/user/message', {
           method: 'POST',
@@ -308,15 +608,15 @@
         });
         const data = await resp.json().catch(()=>({}));
         if (resp.status === 429) {
-          tg.showAlert?.(data?.message || 'Лимит. Попробуйте позже.');
+          tg?.showAlert?.(data?.message || 'Лимит. Попробуйте позже.');
           await refreshLimits();
           return;
         }
         if (!resp.ok || data?.ok === false) throw new Error(data?.message || 'message failed');
-        tg.showAlert ? tg.showAlert('Сообщение отправлено!') : alert('Сообщение отправлено!');
+        tg?.showAlert ? tg.showAlert('Сообщение отправлено!') : alert('Сообщение отправлено!');
         await refreshLimits();
       }catch(e){
-        tg.showAlert ? tg.showAlert('Ошибка: сообщение не отправлено') : alert('Ошибка отправки сообщения');
+        tg?.showAlert ? tg.showAlert('Ошибка: сообщение не отправлено') : alert('Ошибка отправки сообщения');
       }
     }
 
@@ -398,12 +698,16 @@
       $('nick').textContent = user.nickname || '—';
       $('sex').textContent = sexEmoji(user.sex);
       $('age').textContent = user.age ? `${user.age} лет` : '';
+
       if (typeof user.distance_km === 'number' && user.distance_km > 0) {
-        $('dist').style.display = 'inline';
-        $('dist').textContent = user.distance_km < 1 ? `${Math.round(user.distance_km*1000)} м` : `${user.distance_km.toFixed(1)} км`;
+        $('dist').style.display = 'inline-flex';
+        $('dist').textContent = user.distance_km < 1
+          ? `${Math.round(user.distance_km*1000)} м`
+          : `${user.distance_km.toFixed(1)} км`;
       } else {
         $('dist').style.display = 'none';
       }
+
       $('about').textContent = user.about_user || '';
     }
 
@@ -418,7 +722,9 @@
       try{
         const u = await fetchProfile(userId, true);
         await renderProfile(u);
+
         requestAnimationFrame(()=>{ heroImgWrap.classList.add('enter-active'); });
+
         $('loader').style.display = 'none';
         $('profile').style.display = 'block';
       }catch(e){
@@ -442,17 +748,22 @@
       const t = e.touches ? e.touches[0] : e;
       const dx = t.clientX - touchStartX;
       const dy = t.clientY - touchStartY;
+
       if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > SWIPE_MAX_Y) { swiping=false; return; }
+
       heroImgWrap.style.transform = `translateX(${dx*0.12}px)`;
       heroImgWrap.style.opacity = `${Math.max(0.6, 1 - Math.abs(dx)/600)}`;
     }
     function onTouchEnd(e){
       if(!swiping) return;
       swiping = false;
+
       const endX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
       const dx = endX - touchStartX;
+
       heroImgWrap.style.transform = '';
       heroImgWrap.style.opacity = '';
+
       if (Math.abs(dx) < SWIPE_MIN) return;
       if (dx < 0) { go(+1); } else { go(-1); }
     }
@@ -477,8 +788,10 @@
       idx = nextIdx;
       currentId = feed[idx].id;
       history.replaceState(null, '', `?id=${encodeURIComponent(currentId)}${origin?`&origin=${encodeURIComponent(origin)}`:''}`);
+
       await loadAndShow(currentId, {animateFrom: delta>0 ? 'right' : 'left'});
       await refreshLimits();
+
       $('scrollRoot').scrollTo({top:0, behavior:'smooth'});
     }
 
